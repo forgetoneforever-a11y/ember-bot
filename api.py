@@ -15,7 +15,7 @@ from database import init_db, create_user, get_user
 app = Flask(__name__)
 CORS(app)
 
-# --- Путь к папке webapp (абсолютный, чтобы Render точно нашёл) ---
+# --- Путь к папке webapp (абсолютный) ---
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 
@@ -31,10 +31,6 @@ def run_async(coro):
 
 # --- Проверка подписи от Telegram WebApp ---
 def verify_telegram_init_data(init_data: str) -> dict | None:
-    """
-    Проверяет, что данные реально пришли от Telegram, а не подделаны.
-    Возвращает dict с данными пользователя или None, если подпись неверна.
-    """
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
         hash_ = parsed.pop("hash", None)
@@ -45,7 +41,6 @@ def verify_telegram_init_data(init_data: str) -> dict | None:
             f"{k}={v}" for k, v in sorted(parsed.items())
         )
 
-        # Секретный ключ = HMAC-SHA256(BOT_TOKEN, "WebAppData")
         secret_key = hmac.new(
             b"WebAppData",
             BOT_TOKEN.encode(),
@@ -80,10 +75,22 @@ def ensure_db():
         _db_ready = True
 
 
-# --- Главная страница API (для UptimeRobot) ---
+# --- Главная страница API ---
 @app.route("/")
 def root():
     return jsonify({"status": "ok", "service": "Ember API"})
+
+
+# --- Тестовый роут (для диагностики) ---
+@app.route("/test")
+def test_route():
+    return jsonify({
+        "cwd": os.getcwd(),
+        "file_dir": os.path.dirname(os.path.abspath(__file__)),
+        "webapp_dir": WEBAPP_DIR,
+        "webapp_exists": os.path.exists(WEBAPP_DIR),
+        "files_in_webapp": os.listdir(WEBAPP_DIR) if os.path.exists(WEBAPP_DIR) else []
+    })
 
 
 # --- Отдача WebApp ---
@@ -110,7 +117,6 @@ def api_register():
     if not init_data or not profile:
         return jsonify({"error": "missing initData or profile"}), 400
 
-    # Проверяем подпись
     tg_user = verify_telegram_init_data(init_data)
     if not tg_user:
         return jsonify({"error": "invalid initData"}), 401
@@ -118,7 +124,6 @@ def api_register():
     user_id = tg_user.get("id")
     username = tg_user.get("username")
 
-    # Валидация полей
     name = (profile.get("name") or "").strip()
     age = profile.get("age")
     gender = profile.get("gender")
@@ -140,7 +145,6 @@ def api_register():
     if not photo_id:
         return jsonify({"error": "Нужно фото"}), 400
 
-    # Сохраняем
     try:
         run_async(create_user({
             "user_id": user_id,
