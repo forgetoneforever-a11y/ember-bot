@@ -1,0 +1,512 @@
+/* ============================================
+   EMBER — стили с живым градиентным фоном
+   ============================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-hover: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border-light: rgba(255, 255, 255, 0.18);
+  --text: #ffffff;
+  --text-dim: #b8b3d1;
+  --text-muted: #6c6790;
+  --accent-pink: #ff2e63;
+  --accent-lime: #c6ff00;
+  --accent-purple: #8b5cf6;
+  --radius: 18px;
+  --radius-sm: 14px;
+}
+
+html, body {
+  height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.4;
+  position: relative;
+  background: #0a0620;
+}
+
+/* ============================================
+   ЖИВОЙ ФОН — 3 СЛОЯ
+   ============================================ */
+
+/* Слой 1: движущиеся цветные пятна (aura blobs) */
+.bg-blobs {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-blobs::before,
+.bg-blobs::after,
+.bg-blobs .blob-3 {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  will-change: transform;
+}
+
+/* Пятно 1 — фиолетовое */
+.bg-blobs::before {
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, #8b5cf6 0%, transparent 70%);
+  top: -20%;
+  left: -20%;
+  animation: blobFloat1 18s ease-in-out infinite;
+}
+
+/* Пятно 2 — розовое */
+.bg-blobs::after {
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, #ff2e63 0%, transparent 70%);
+  bottom: -15%;
+  right: -15%;
+  animation: blobFloat2 22s ease-in-out infinite;
+}
+
+/* Пятно 3 — синее */
+.bg-blobs .blob-3 {
+  width: 55vw;
+  height: 55vw;
+  background: radial-gradient(circle, #2563eb 0%, transparent 70%);
+  top: 40%;
+  left: 30%;
+  animation: blobFloat3 26s ease-in-out infinite;
+}
+
+@keyframes blobFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(15vw, 10vh) scale(1.2); }
+  66%      { transform: translate(-5vw, 20vh) scale(0.9); }
+}
+
+@keyframes blobFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-20vw, -10vh) scale(1.15); }
+  66%      { transform: translate(-5vw, -25vh) scale(0.95); }
+}
+
+@keyframes blobFloat3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-15vw, -15vh) scale(1.3); }
+}
+
+/* Слой 2: градиентный overlay, плавно меняет оттенок */
+.bg-gradient {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+
+  background: linear-gradient(
+    160deg,
+    rgba(10, 6, 32, 0.7) 0%,
+    rgba(19, 16, 66, 0.6) 30%,
+    rgba(30, 15, 61, 0.55) 60%,
+    rgba(42, 16, 82, 0.7) 100%
+  );
+
+  animation: hueShift 30s linear infinite;
+}
+
+@keyframes hueShift {
+  0%   { filter: hue-rotate(0deg); }
+  50%  { filter: hue-rotate(25deg); }
+  100% { filter: hue-rotate(0deg); }
+}
+
+/* Слой 3: мерцающие звёздочки */
+.bg-stars {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(2px 2px at 15% 60%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 75% 45%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 30% 15%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(2px 2px at 90% 80%, rgba(255,255,255,0.3), transparent);
+  background-size: 200% 200%;
+  animation: starsTwinkle 8s ease-in-out infinite;
+}
+
+@keyframes starsTwinkle {
+  0%, 100% { opacity: 0.6; background-position: 0% 0%; }
+  50%      { opacity: 1;   background-position: 100% 100%; }
+}
+
+/* ============================================
+   APP — поверх фона
+   ============================================ */
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 2;
+}
+
+/* ============================================
+   ЭКРАНЫ
+   ============================================ */
+
+.screen {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  opacity: 0;
+  transform: translateX(24px);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.screen.active {
+  display: flex;
+  opacity: 1;
+  transform: translateX(0);
+  animation: screenIn 0.4s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+@keyframes screenIn {
+  from { opacity: 0; transform: translateX(24px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+/* ============================================
+   МАСКОТ
+   ============================================ */
+
+.mascot {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+  animation: mascotFloat 4s ease-in-out infinite;
+}
+
+.mascot img {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  border-radius: 50%;
+  filter: drop-shadow(0 8px 32px rgba(255, 46, 99, 0.35));
+}
+
+@keyframes mascotFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+/* ============================================
+   ЗАГОЛОВКИ
+   ============================================ */
+
+h1 {
+  font-size: 32px;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 8px;
+  letter-spacing: -0.5px;
+  animation: textFadeUp 0.5s ease 0.1s both;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 28px;
+  animation: textFadeUp 0.5s ease 0.15s both;
+}
+
+@keyframes textFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   ПОЛЯ ВВОДА — GLASS
+   ============================================ */
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  margin-top: 4px;
+  animation: textFadeUp 0.5s ease 0.2s both;
+}
+
+input[type="text"],
+textarea {
+  width: 100%;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 16px;
+  padding: 16px;
+  outline: none;
+  font-family: inherit;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: border-color 0.25s ease,
+              background 0.25s ease,
+              box-shadow 0.25s ease,
+              transform 0.15s ease;
+  animation: fieldFadeIn 0.5s ease 0.25s both;
+}
+
+@keyframes fieldFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  border-color: var(--accent-purple);
+  background: var(--glass-bg-hover);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15),
+              0 8px 32px rgba(139, 92, 246, 0.25);
+  transform: translateY(-1px);
+}
+
+input[type="text"]::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+textarea {
+  min-height: 140px;
+  resize: none;
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 8px 4px 20px;
+  animation: textFadeUp 0.5s ease 0.3s both;
+}
+
+/* ============================================
+   СЛАЙДЕР
+   ============================================ */
+
+.slider-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 18px 16px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: fieldFadeIn 0.5s ease 0.25s both;
+}
+
+.slider-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-pink);
+  min-width: 44px;
+  text-align: center;
+  transition: transform 0.15s ease;
+}
+
+.slider-value.bump {
+  transform: scale(1.15);
+}
+
+input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  background: #ffffff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid var(--accent-pink);
+  box-shadow: 0 4px 12px rgba(255, 46, 99, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  background: #ffffff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid var(--accent-pink);
+}
+
+/* ============================================
+   ЧИПСЫ
+   ============================================ */
+
+.chips {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.chip {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+  padding: 16px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+  animation: fieldFadeIn 0.5s ease both;
+}
+
+.chip:nth-child(1) { animation-delay: 0.25s; }
+.chip:nth-child(2) { animation-delay: 0.32s; }
+
+.chip:active { transform: scale(0.97); }
+
+.chip.selected {
+  border-color: var(--accent-pink);
+  background: rgba(255, 46, 99, 0.12);
+  box-shadow: 0 0 0 3px rgba(255, 46, 99, 0.15),
+              0 8px 24px rgba(255, 46, 99, 0.2);
+  transform: scale(1.02);
+}
+
+/* ============================================
+   КНОПКИ
+   ============================================ */
+
+.btn-primary {
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent-pink) 0%, #c81e4d 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 18px;
+  margin-top: auto;
+  cursor: pointer;
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(255, 46, 99, 0.35);
+  transition: transform 0.15s cubic-bezier(0.34, 1.3, 0.64, 1),
+              box-shadow 0.25s ease;
+  animation: fieldFadeIn 0.5s ease 0.35s both;
+}
+
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 12px 32px rgba(255, 46, 99, 0.5);
+  transform: translateY(-2px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-primary.success {
+  background: linear-gradient(135deg, var(--accent-lime) 0%, #9acc00 100%);
+  color: #000;
+  box-shadow: 0 8px 24px rgba(198, 255, 0, 0.3);
+}
+
+/* ============================================
+   ИНФО-БОКС
+   ============================================ */
+
+.info-box {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 18px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: var(--text-dim);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: fieldFadeIn 0.5s ease 0.25s both;
+}
+
+.info-box b { color: var(--text); }
+.info-box ol { margin-top: 8px; padding-left: 20px; }
+.info-box li { margin-bottom: 6px; }
+
+.info-box code {
+  background: rgba(139, 92, 246, 0.15);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--accent-lime);
+  font-size: 13px;
+}
+
+/* ============================================
+   СКРОЛЛБАР
+   ============================================ */
+
+::-webkit-scrollbar { width: 0; background: transparent; }
+
+/* ============================================
+   АДАПТИВ
+   ============================================ */
+
+@media (max-width: 380px) {
+  h1 { font-size: 26px; }
+  .mascot img { width: 140px; height: 140px; }
+  .app { padding: 20px 16px 32px; }
+}
