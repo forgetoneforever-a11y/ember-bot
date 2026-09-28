@@ -1,7 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
-# URL WebApp — временно заглушка, заменим после деплоя на Render
-WEBAPP_URL = "https://example.com/webapp"
+# URL WebApp — реальный адрес на Render
+WEBAPP_URL = "https://ember-bot-6xwb.onrender.com/webapp/"
 
 
 def open_app_kb():
