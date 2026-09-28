@@ -1,266 +1,223 @@
-// ============================================
-// EMBER — логика WebApp
-// ============================================
+import asyncio
+import hmac
+import hashlib
+import json
+import os
+from urllib.parse import parse_qsl
 
-// ===== Инициализация Telegram WebApp =====
-const tg = window.Telegram?.WebApp;
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from aiogram.types import Update
 
-if (tg) {
-  tg.ready();
-  tg.expand();
-  try {
-    document.body.style.background = tg.themeParams?.bg_color || "";
-  } catch (e) {}
-}
+from config import BOT_TOKEN
+from database import init_db, create_user, get_user
 
-// ===== Данные анкеты =====
-const profile = {
-  name: "",
-  username: "",
-  age: 18,
-  looking_for: "",
-  gender: "",
-  city: "",
-  bio: "",
-  photo_id: "",
-};
 
-// ===== Переключение экранов с анимацией =====
-function showScreen(id) {
-  const current = document.querySelector(".screen.active");
-  const next = document.getElementById(id);
-  if (!next || current === next) return;
+app = Flask(__name__)
+CORS(app)
 
-  if (current) {
-    current.style.opacity = "0";
-    current.style.transform = "translateX(-24px)";
-    setTimeout(() => {
-      current.classList.remove("active");
-      current.style.opacity = "";
-      current.style.transform = "";
-    }, 200);
-  }
+WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
-  setTimeout(() => {
-    next.classList.add("active");
-    next.style.opacity = "";
-    next.style.transform = "";
-  }, 200);
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
 
-// ===== Показать ошибку =====
-function showError(text) {
-  if (tg && tg.showAlert) {
-    tg.showAlert(text);
-  } else {
-    alert(text);
-  }
-}
+def run_async(coro):
+    return loop.run_until_complete(coro)
 
-// ===== Вибро-отклик =====
-function haptic(type = "light") {
-  if (tg && tg.HapticFeedback) {
-    if (type === "light") tg.HapticFeedback.impactOccurred("light");
-    if (type === "medium") tg.HapticFeedback.impactOccurred("medium");
-    if (type === "success") tg.HapticFeedback.notificationOccurred("success");
-    if (type === "error") tg.HapticFeedback.notificationOccurred("error");
-  }
-}
 
-// ============================================
-// ЭКРАН 1: ИМЯ
-// ============================================
-document.getElementById("btn-next-1").addEventListener("click", () => {
-  const name = document.getElementById("input-name").value.trim();
-  const username = document.getElementById("input-username").value.trim().replace("@", "");
+def verify_telegram_init_data(init_data: str):
+    try:
+        parsed = dict(parse_qsl(init_data, strict_parsing=True))
+        hash_ = parsed.pop("hash", None)
+        if not hash_:
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(computed_hash, hash_):
+            return None
+        return json.loads(parsed.get("user", "{}"))
+    except Exception as e:
+        print(f"verify error: {e}")
+        return None
 
-  if (name.length < 2 || name.length > 32) {
-    haptic("error");
-    showError("Имя должно быть от 2 до 32 символов");
-    return;
-  }
 
-  profile.name = name;
-  profile.username = username;
-  haptic("light");
-  showScreen("screen-age");
-});
+# ============ BOT (webhook) ============
 
-// ============================================
-// ЭКРАН 2: ВОЗРАСТ + КОГО ИЩЕШЬ
-// ============================================
-const ageInput = document.getElementById("input-age");
-const ageValue = document.getElementById("age-value");
+_bot = None
+_dp = None
+_bot_ready = False
 
-ageInput.addEventListener("input", () => {
-  ageValue.textContent = ageInput.value;
-  profile.age = parseInt(ageInput.value);
-  ageValue.classList.add("bump");
-  setTimeout(() => ageValue.classList.remove("bump"), 150);
-  haptic("light");
-});
 
-document.querySelectorAll("#looking-chips .chip").forEach(chip => {
-  chip.addEventListener("click", () => {
-    document.querySelectorAll("#looking-chips .chip").forEach(c => c.classList.remove("selected"));
-    chip.classList.add("selected");
-    profile.looking_for = chip.dataset.value;
-    haptic("light");
-  });
-});
+def ensure_bot():
+    global _bot, _dp, _bot_ready
+    if _bot_ready:
+        return
+    from bot import create_bot_and_dispatcher
+    _bot, _dp = create_bot_and_dispatcher()
+    _bot_ready = True
+    print("🤖 Бот инициализирован (webhook режим).")
 
-document.getElementById("btn-next-2").addEventListener("click", () => {
-  if (!profile.looking_for) {
-    haptic("error");
-    showError("Выбери, кого ищешь");
-    return;
-  }
-  haptic("light");
-  showScreen("screen-gender");
-});
 
-// ============================================
-// ЭКРАН 3: ПОЛ
-// ============================================
-document.querySelectorAll("#gender-chips .chip").forEach(chip => {
-  chip.addEventListener("click", () => {
-    document.querySelectorAll("#gender-chips .chip").forEach(c => c.classList.remove("selected"));
-    chip.classList.add("selected");
-    profile.gender = chip.dataset.value;
-    haptic("light");
-  });
-});
+_db_ready = False
 
-document.getElementById("btn-next-3").addEventListener("click", () => {
-  if (!profile.gender) {
-    haptic("error");
-    showError("Выбери, кто ты");
-    return;
-  }
-  haptic("light");
-  showScreen("screen-city");
-});
 
-// ============================================
-// ЭКРАН 4: ГОРОД
-// ============================================
-document.getElementById("btn-next-4").addEventListener("click", () => {
-  const city = document.getElementById("input-city").value.trim();
-  if (city.length < 2) {
-    haptic("error");
-    showError("Укажи город");
-    return;
-  }
-  profile.city = city;
-  haptic("light");
-  showScreen("screen-bio");
-});
+@app.before_request
+def ensure_db():
+    global _db_ready
+    if not _db_ready:
+        run_async(init_db())
+        _db_ready = True
 
-// ============================================
-// ЭКРАН 5: О СЕБЕ
-// ============================================
-document.getElementById("btn-next-5").addEventListener("click", () => {
-  const bio = document.getElementById("input-bio").value.trim();
-  if (bio.length < 5) {
-    haptic("error");
-    showError("Напиши хотя бы пару слов о себе");
-    return;
-  }
-  profile.bio = bio;
-  haptic("light");
-  showScreen("screen-photo");
-  checkPhoto();
-});
 
-// ============================================
-// ЭКРАН 6: ФОТО
-// ============================================
-function checkPhoto() {
-  // 1. Приоритет — photo_id из URL (deep link от бота)
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlPhotoId = urlParams.get("photo_id");
+@app.route("/")
+def root():
+    return jsonify({"status": "ok", "service": "Ember API"})
 
-  if (urlPhotoId) {
-    localStorage.setItem("ember_photo_id", urlPhotoId);
-    profile.photo_id = urlPhotoId;
-    document.getElementById("photo-status").textContent = "✅ Фото загружено";
-    document.getElementById("btn-save").disabled = false;
 
-    // Убираем photo_id из URL, чтобы не мешал
-    window.history.replaceState({}, "", window.location.pathname);
-    return;
-  }
+@app.route("/test")
+def test_route():
+    return jsonify({
+        "webapp_dir": WEBAPP_DIR,
+        "webapp_exists": os.path.exists(WEBAPP_DIR),
+        "files_in_webapp": os.listdir(WEBAPP_DIR) if os.path.exists(WEBAPP_DIR) else []
+    })
 
-  // 2. Иначе — проверяем localStorage
-  const savedPhoto = localStorage.getItem("ember_photo_id");
-  if (savedPhoto) {
-    profile.photo_id = savedPhoto;
-    document.getElementById("photo-status").textContent = "✅ Фото загружено";
-    document.getElementById("btn-save").disabled = false;
-  } else {
-    document.getElementById("photo-status").textContent = "⏳ Фото ещё не загружено";
-    document.getElementById("btn-save").disabled = true;
-  }
-}
 
-// Проверяем фото каждые 2 секунды, пока открыт экран
-setInterval(() => {
-  const photoScreen = document.getElementById("screen-photo");
-  if (photoScreen && photoScreen.classList.contains("active")) {
-    checkPhoto();
-  }
-}, 2000);
+@app.route("/webapp/")
+def webapp_index():
+    return send_from_directory(WEBAPP_DIR, "index.html")
 
-// ============================================
-// СОХРАНЕНИЕ АНКЕТЫ
-// ============================================
-document.getElementById("btn-save").addEventListener("click", async () => {
-  const btn = document.getElementById("btn-save");
-  btn.disabled = true;
-  btn.textContent = "Сохраняем...";
 
-  try {
-    const response = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        initData: tg?.initData || "",
-        profile: profile,
-      }),
-    });
+@app.route("/webapp/<path:path>")
+def webapp_static(path):
+    return send_from_directory(WEBAPP_DIR, path)
 
-    const data = await response.json();
 
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Ошибка сервера");
-    }
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "no data"}), 400
+    init_data = data.get("initData")
+    profile = data.get("profile")
+    if not init_data or not profile:
+        return jsonify({"error": "missing initData or profile"}), 400
 
-    localStorage.removeItem("ember_photo_id");
-    haptic("success");
-    showScreen("screen-done");
-  } catch (err) {
-    haptic("error");
-    showError("Ошибка: " + err.message);
-    btn.disabled = false;
-    btn.textContent = "Сохранить анкету";
-  }
-});
+    tg_user = verify_telegram_init_data(init_data)
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
 
-// ============================================
-// ЗАКРЫТИЕ
-// ============================================
-document.getElementById("btn-close").addEventListener("click", () => {
-  haptic("light");
-  if (tg && tg.close) {
-    tg.close();
-  } else {
-    window.close();
-  }
-});
+    user_id = tg_user.get("id")
+    username = tg_user.get("username")
 
-// ============================================
-// СТАРТ
-// ============================================
-showScreen("screen-name");
+    name = (profile.get("name") or "").strip()
+    age = profile.get("age")
+    gender = profile.get("gender")
+    looking_for = profile.get("looking_for")
+    city = (profile.get("city") or "").strip()
+    bio = (profile.get("bio") or "").strip()
+    photo_id = (profile.get("photo_id") or "").strip()
+
+    if len(name) < 2 or len(name) > 32:
+        return jsonify({"error": "Имя от 2 до 32 символов"}), 400
+    if not isinstance(age, int) or age < 18 or age > 99:
+        return jsonify({"error": "Возраст от 18 до 99"}), 400
+    if gender not in ("male", "female"):
+        return jsonify({"error": "Неверный пол"}), 400
+    if looking_for not in ("male", "female"):
+        return jsonify({"error": "Неверный looking_for"}), 400
+    if not city:
+        return jsonify({"error": "Укажи город"}), 400
+    if not photo_id:
+        return jsonify({"error": "Нужно фото"}), 400
+
+    try:
+        run_async(create_user({
+            "user_id": user_id, "username": username, "name": name,
+            "age": age, "gender": gender, "looking_for": looking_for,
+            "city": city, "bio": bio[:200], "photo_id": photo_id,
+        }))
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"create_user error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/profile/<int:user_id>")
+def api_profile(user_id):
+    u = run_async(get_user(user_id))
+    if not u:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({
+        "user_id": u["user_id"], "name": u["name"], "age": u["age"],
+        "city": u["city"], "bio": u["bio"], "photo_id": u["photo_id"],
+    })
+
+
+# ============ WEBHOOK ============
+
+@app.route("/webhook/<secret>", methods=["POST"])
+def telegram_webhook(secret):
+    expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+    if secret != expected:
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        ensure_bot()
+        update_data = request.get_json(force=True)
+        update = Update.model_validate(update_data)
+
+        async def process():
+            await _dp.feed_update(_bot, update)
+
+        run_async(process())
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"webhook error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/set_webhook")
+def set_webhook():
+    try:
+        ensure_bot()
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
+        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+        webhook_url = f"{render_url}/webhook/{secret}"
+
+        async def set_it():
+            await _bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            info = await _bot.get_webhook_info()
+            return info
+
+        info = run_async(set_it())
+        return jsonify({
+            "ok": True,
+            "webhook_url": webhook_url,
+            "telegram_says": {
+                "url": info.url,
+                "pending_update_count": info.pending_update_count,
+                "last_error_message": info.last_error_message,
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/delete_webhook")
+def delete_webhook():
+    try:
+        ensure_bot()
+
+        async def del_it():
+            await _bot.delete_webhook(drop_pending_updates=True)
+
+        run_async(del_it())
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
