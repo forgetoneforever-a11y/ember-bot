@@ -10,7 +10,6 @@ from urllib.parse import parse_qsl
 from flask import (Flask, jsonify, request, send_from_directory, redirect,
                    session, render_template_string)
 from flask_cors import CORS
-from aiogram.types import Update, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import BOT_TOKEN, ADMIN_ID
 from database import (init_db, create_user, get_user,
@@ -26,13 +25,11 @@ WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 
 # ============================================================
-# БЕЗОПАСНЫЙ ЗАПУСК ASYNC-ФУНКЦИЙ ИЗ SYNC FLASK
+# ASYNC HELPER (безопасный из любого контекста)
 # ============================================================
 
 def run_async(coro):
-    """Запускает async-функцию в отдельном потоке — безопасно из любого контекста.
-    Не конфликтует с event loop бота.
-    """
+    """Запускает async-функцию в отдельном потоке со своим event loop."""
     def runner():
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
@@ -64,7 +61,6 @@ def verify_telegram_init_data(init_data: str):
 
 
 def get_tg_user_from_request():
-    """Универсальный хелпер: получает user из initData в JSON-теле."""
     data = request.get_json(silent=True) or {}
     init_data = data.get("initData")
     if not init_data:
@@ -73,23 +69,46 @@ def get_tg_user_from_request():
 
 
 # ============================================================
-# BOT (webhook)
+# TELEGRAM: отправка сообщений (напрямую через HTTP, без aiogram)
 # ============================================================
 
-_bot = None
-_dp = None
-_bot_ready = False
+def tg_send_message(chat_id: int, text: str):
+    """Отправляет сообщение в Telegram через Bot API."""
+    try:
+        import requests as rq
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_message error: {e}")
 
 
-def ensure_bot():
-    global _bot, _dp, _bot_ready
-    if _bot_ready:
-        return
-    from bot import create_bot_and_dispatcher
-    _bot, _dp = create_bot_and_dispatcher()
-    _bot_ready = True
-    print("🤖 Бот инициализирован (webhook режим).")
+def tg_send_photo(chat_id: int, photo_id: str, caption: str = "", reply_markup: dict = None):
+    """Отправляет фото с подписью и кнопками."""
+    try:
+        import requests as rq
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_id,
+            "caption": caption,
+            "parse_mode": "HTML",
+        }
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+            json=payload,
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_photo error: {e}")
 
+
+# ============================================================
+# ИНИЦИАЛИЗАЦИЯ БАЗЫ
+# ============================================================
 
 _db_ready = False
 
@@ -292,62 +311,39 @@ def api_like():
 
     is_match = run_async(add_like(from_id, to_id))
 
-    # Уведомления через бота
-    if _bot:
-        try:
-            me = run_async(get_user_info(from_id))
-            partner = run_async(get_user_info(to_id))
-            me_full = run_async(get_user(from_id))
+    # Уведомления через Telegram HTTP (без aiogram)
+    try:
+        me = run_async(get_user_info(from_id))
+        partner = run_async(get_user_info(to_id))
+        me_full = run_async(get_user(from_id))
 
-            if is_match:
-                if me and partner:
-                    text_partner = (
-                        f"💘 <b>У тебя искра!</b>\n\n"
-                        f"Вы с <b>{me['name']}</b> лайкнули друг друга."
-                    )
-                    if me["username"]:
-                        text_partner += f"\n👉 @{me['username']}"
-                    try:
-                        run_async(_bot.send_message(to_id, text_partner))
-                    except Exception:
-                        pass
+        if is_match:
+            if me and partner:
+                text_partner = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
+                if me["username"]:
+                    text_partner += f"\n👉 @{me['username']}"
+                tg_send_message(to_id, text_partner)
 
-                    text_me = (
-                        f"💘 <b>У тебя искра!</b>\n\n"
-                        f"Вы с <b>{partner['name']}</b> лайкнули друг друга."
-                    )
-                    if partner["username"]:
-                        text_me += f"\n👉 @{partner['username']}"
-                    try:
-                        run_async(_bot.send_message(from_id, text_me))
-                    except Exception:
-                        pass
-            else:
-                if me and me_full:
-                    text = (
-                        f"❤️ <b>Тебя лайкнули!</b>\n\n"
-                        f"<b>{me['name']}, {me_full['age']}</b>\n"
-                        f"📍 {me_full['city']}\n\n"
-                        f"{me_full['bio']}"
-                    )
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="❤️ Ответить взаимно",
-                            callback_data=f"like_back:{from_id}"
-                        )
-                    ]])
-
-                    try:
-                        run_async(_bot.send_photo(
-                            to_id, me_full["photo_id"],
-                            caption=text,
-                            reply_markup=kb
-                        ))
-                    except Exception as e:
-                        print(f"like notify error: {e}")
-
-        except Exception as e:
-            print(f"match notify error: {e}")
+                text_me = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
+                if partner["username"]:
+                    text_me += f"\n👉 @{partner['username']}"
+                tg_send_message(from_id, text_me)
+        else:
+            if me and me_full:
+                text = (
+                    f"❤️ <b>Тебя лайкнули!</b>\n\n"
+                    f"<b>{me['name']}, {me_full['age']}</b>\n"
+                    f"📍 {me_full['city']}\n\n"
+                    f"{me_full['bio']}"
+                )
+                kb = {
+                    "inline_keyboard": [[
+                        {"text": "❤️ Ответить взаимно", "callback_data": f"like_back:{from_id}"}
+                    ]]
+                }
+                tg_send_photo(to_id, me_full["photo_id"], text, kb)
+    except Exception as e:
+        print(f"like notify error: {e}")
 
     return jsonify({"ok": True, "match": is_match})
 
@@ -587,97 +583,6 @@ def admin_ban(user_id):
             await conn.execute("UPDATE users SET is_active=FALSE WHERE user_id=$1", user_id)
     run_async(do_ban())
     return redirect("/admin")
-
-
-# ============================================================
-# WEBHOOK
-# ============================================================
-
-@app.route("/webhook/<secret>", methods=["POST"])
-def telegram_webhook(secret):
-    expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-    if secret != expected:
-        return jsonify({"error": "forbidden"}), 403
-    try:
-        ensure_bot()
-        update_data = request.get_json(force=True)
-        update = Update.model_validate(update_data)
-
-        async def process():
-            await _dp.feed_update(_bot, update)
-
-        run_async(process())
-        return jsonify({"ok": True})
-    except Exception as e:
-        print(f"webhook error: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/set_webhook")
-def set_webhook():
-    try:
-        ensure_bot()
-        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
-        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-        webhook_url = f"{render_url}/webhook/{secret}"
-
-        async def set_it():
-            await _bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-            info = await _bot.get_webhook_info()
-            return info
-
-        info = run_async(set_it())
-        return jsonify({
-            "ok": True,
-            "webhook_url": webhook_url,
-            "telegram_says": {
-                "url": info.url,
-                "pending_update_count": info.pending_update_count,
-                "last_error_message": info.last_error_message,
-            }
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/delete_webhook")
-def delete_webhook():
-    try:
-        ensure_bot()
-
-        async def del_it():
-            await _bot.delete_webhook(drop_pending_updates=True)
-
-        run_async(del_it())
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-# ============================================================
-# АВТО-WEBHOOK
-# ============================================================
-
-def _auto_set_webhook():
-    try:
-        import time
-        time.sleep(3)
-        import requests as rq
-        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
-        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-        webhook_url = f"{render_url}/webhook/{secret}"
-        r = rq.get(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}&drop_pending_updates=true",
-            timeout=10
-        )
-        print(f"🔗 Авто-webhook: {r.json()}")
-    except Exception as e:
-        print(f"auto webhook error: {e}")
-
-
-if os.getenv("RENDER"):
-    import threading
-    threading.Thread(target=_auto_set_webhook, daemon=True).start()
 
 
 if __name__ == "__main__":
