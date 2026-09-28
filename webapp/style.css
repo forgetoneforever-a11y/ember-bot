@@ -1,5 +1,5 @@
 /* ============================================
-   EMBER — стили с лентой и свайпами
+   EMBER — стили с лентой, свайпами, фильтром
    ============================================ */
 
 * {
@@ -456,7 +456,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ============================================
-   ЛЕНТА АНКЕТ
+   ЛЕНТА — ЗАГОЛОВОК И ФИЛЬТР
    ============================================ */
 
 .feed-header {
@@ -470,6 +470,34 @@ input[type="range"]::-moz-range-thumb {
   margin: 0;
   font-size: 24px;
 }
+
+.filter-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  white-space: nowrap;
+}
+
+.filter-btn:active { transform: scale(0.95); }
+
+.filter-btn.active {
+  background: rgba(255, 46, 99, 0.2);
+  border-color: #ff2e63;
+  color: #ff6b8a;
+}
+
+/* ============================================
+   ЛЕНТА — КАРТОЧКА
+   ============================================ */
 
 .card-wrapper {
   flex: 1;
@@ -497,18 +525,12 @@ input[type="range"]::-moz-range-thumb {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.card.swiping-right {
-  animation: swipeRight 0.4s ease forwards;
-}
-
-.card.swiping-left {
-  animation: swipeLeft 0.4s ease forwards;
-}
+.card.swiping-right { animation: swipeRight 0.4s ease forwards; }
+.card.swiping-left { animation: swipeLeft 0.4s ease forwards; }
 
 @keyframes swipeRight {
   to { transform: translateX(120%) rotate(20deg); opacity: 0; }
 }
-
 @keyframes swipeLeft {
   to { transform: translateX(-120%) rotate(-20deg); opacity: 0; }
 }
@@ -555,9 +577,7 @@ input[type="range"]::-moz-range-thumb {
   color: #000;
 }
 
-.card-info {
-  padding: 20px;
-}
+.card-info { padding: 20px; }
 
 .card-info h2 {
   font-size: 24px;
@@ -578,7 +598,10 @@ input[type="range"]::-moz-range-thumb {
   opacity: 0.9;
 }
 
-/* Кнопки лайка/скипа */
+/* ============================================
+   ЛЕНТА — КНОПКИ ЛАЙК/СКИП
+   ============================================ */
+
 .feed-actions {
   display: flex;
   justify-content: center;
@@ -622,7 +645,10 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 8px 32px rgba(255, 46, 99, 0.6);
 }
 
-/* Загрузка и пусто */
+/* ============================================
+   ЗАГРУЗКА / ПУСТО
+   ============================================ */
+
 .loading-feed, .empty-feed {
   text-align: center;
   padding: 40px 20px;
@@ -665,7 +691,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ============================================
-   МЭТЧИ (список)
+   МЭТЧИ — СПИСОК
    ============================================ */
 
 .matches-list {
@@ -733,4 +759,5 @@ input[type="range"]::-moz-range-thumb {
   .mascot img { width: 140px; height: 140px; }
   .app { padding: 20px 16px 32px; }
   .action-btn { width: 64px; height: 64px; font-size: 28px; }
+  .filter-btn { font-size: 12px; padding: 6px 10px; }
 }
