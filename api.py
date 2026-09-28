@@ -3,10 +3,14 @@ import hmac
 import hashlib
 import json
 import os
+import threading
 from urllib.parse import parse_qsl
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from database import init_db, create_user, get_user
@@ -63,6 +67,38 @@ def verify_telegram_init_data(init_data: str) -> dict | None:
         return None
 
 
+# ============================================================
+# === ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ ===
+# ============================================================
+
+def start_bot_in_thread():
+    """Запускает Telegram-бота в фоновом потоке."""
+    def bot_thread():
+        from bot import create_bot_and_dispatcher
+
+        async def run_bot():
+            # Инициализация базы
+            await init_db()
+
+            # Создаём бота
+            bot, dp = create_bot_and_dispatcher()
+
+            print("🔥 Ember bot запущен в фоне.")
+            try:
+                await dp.start_polling(bot)
+            except Exception as e:
+                print(f"❌ Ошибка бота: {e}")
+
+        # Отдельный event loop для потока бота
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        new_loop.run_until_complete(run_bot())
+
+    thread = threading.Thread(target=bot_thread, daemon=True)
+    thread.start()
+    print("🚀 Поток бота запущен.")
+
+
 # --- Инициализация базы при первом запросе ---
 _db_ready = False
 
@@ -81,7 +117,7 @@ def root():
     return jsonify({"status": "ok", "service": "Ember API"})
 
 
-# --- Тестовый роут (для диагностики) ---
+# --- Тестовый роут ---
 @app.route("/test")
 def test_route():
     return jsonify({
@@ -179,5 +215,13 @@ def api_profile(user_id):
     })
 
 
+# --- Запуск бота при старте приложения ---
+# Запускаем ТОЛЬКО если это production (на Render).
+# На локальном компьютере бот запускается вручную через `python bot.py`.
+if os.getenv("RENDER") or os.getenv("START_BOT") == "1":
+    start_bot_in_thread()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Локальный запуск — только API
+    app.run(host="0.0.0.0", port=5000, debug=False)
