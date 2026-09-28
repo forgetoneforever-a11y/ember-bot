@@ -380,6 +380,54 @@ document.getElementById("btn-matches-back").addEventListener("click", () => {
 });
 
 // ============================================
+// ФИЛЬТР ПО ГОРОДУ
+// ============================================
+
+const cityFilterBtn = document.getElementById("btn-city-filter");
+
+function updateCityFilterUI(onlyCity) {
+  if (!cityFilterBtn) return;
+  if (onlyCity) {
+    cityFilterBtn.textContent = "🏙 Только мой город";
+    cityFilterBtn.classList.add("active");
+  } else {
+    cityFilterBtn.textContent = "🌍 Вся страна";
+    cityFilterBtn.classList.remove("active");
+  }
+}
+
+async function loadCityFilterState() {
+  try {
+    const data = await apiCall("/api/me");
+    if (data && data.filter_city_only !== undefined) {
+      updateCityFilterUI(data.filter_city_only);
+    }
+  } catch (e) {}
+}
+
+if (cityFilterBtn) {
+  cityFilterBtn.addEventListener("click", async () => {
+    const isActive = cityFilterBtn.classList.contains("active");
+    const newValue = !isActive;
+
+    try {
+      await apiCall("/api/filter/city", { only_city: newValue });
+      updateCityFilterUI(newValue);
+      haptic("light");
+
+      if (document.getElementById("screen-feed").classList.contains("active")) {
+        await loadNextProfile();
+      }
+    } catch (e) {
+      haptic("error");
+      showError("Не получилось изменить фильтр");
+    }
+  });
+}
+
+loadCityFilterState();
+
+// ============================================
 // СТАРТ
 // ============================================
 
