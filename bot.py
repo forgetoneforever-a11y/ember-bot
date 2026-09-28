@@ -1,7 +1,8 @@
 import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, Update
+from aiogram.types import (Message, CallbackQuery, InlineKeyboardMarkup,
+                            InlineKeyboardButton, WebAppInfo)
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
@@ -12,8 +13,10 @@ from database import init_db, get_user, get_user_count
 logging.basicConfig(level=logging.INFO)
 
 
+WEBAPP_URL = "https://ember-bot-6xwb.onrender.com/webapp/"
+
+
 def create_bot_and_dispatcher():
-    """Создаёт и настраивает бота + диспетчер с роутами."""
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
 
@@ -46,9 +49,49 @@ def create_bot_and_dispatcher():
         await msg.answer(
             "Что я умею:\n"
             "/start — главное меню\n"
+            "/photo — загрузить фото\n"
             "/profile — моя анкета\n"
-            "/test_db — проверить базу\n"
             "/help — эта справка"
+        )
+
+    # ---------- /photo ----------
+    @dp.message(Command("photo"))
+    async def cmd_photo(msg: Message):
+        await msg.answer(
+            "📸 <b>Загрузи своё фото</b>\n\n"
+            "Отправь мне фотографию одним сообщением.\n\n"
+            "⚠️ Требования:\n"
+            "• Твоё лицо чётко видно\n"
+            "• Без чужих людей на фото\n"
+            "• Без 18+ контента"
+        )
+
+    # ---------- Приём фото ----------
+    @dp.message(F.photo)
+    async def handle_photo(msg: Message):
+        photo_id = msg.photo[-1].file_id
+
+        # Сохраняем photo_id в БД временно — прикрепим при регистрации
+        try:
+            from database import save_temp_photo
+            await save_temp_photo(msg.from_user.id, photo_id)
+        except Exception as e:
+            print(f"save_temp_photo error: {e}")
+
+        # Кнопка "Вернуться в Ember" — deep link с photo_id
+        webapp_url_with_photo = f"{WEBAPP_URL}?photo_id={photo_id}"
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🔥 Вернуться в Ember",
+                web_app=WebAppInfo(url=webapp_url_with_photo)
+            )
+        ]])
+
+        await msg.answer(
+            "✅ <b>Фото сохранено!</b>\n\n"
+            "Нажми кнопку ниже, чтобы вернуться в приложение "
+            "и завершить регистрацию.",
+            reply_markup=kb
         )
 
     # ---------- /test_db ----------
@@ -94,7 +137,7 @@ def format_profile(u) -> str:
     )
 
 
-# --- Отдельный запуск для локального теста (polling) ---
+# --- Локальный запуск (polling) ---
 if __name__ == "__main__":
     import asyncio
 
