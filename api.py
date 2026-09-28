@@ -9,8 +9,10 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from aiogram.types import Update
 
-from config import BOT_TOKEN
-from database import init_db, create_user, get_user
+from config import BOT_TOKEN, ADMIN_ID
+from database import (init_db, create_user, get_user,
+                      get_next_profile, add_like, add_skip,
+                      get_user_info)
 
 
 app = Flask(__name__)
@@ -27,6 +29,7 @@ def run_async(coro):
 
 
 def verify_telegram_init_data(init_data: str):
+    """Проверяет подпись Telegram WebApp."""
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
         hash_ = parsed.pop("hash", None)
@@ -41,6 +44,15 @@ def verify_telegram_init_data(init_data: str):
     except Exception as e:
         print(f"verify error: {e}")
         return None
+
+
+def get_tg_user_from_request():
+    """Универсальный хелпер: получает user из initData в JSON-теле."""
+    data = request.get_json(silent=True) or {}
+    init_data = data.get("initData")
+    if not init_data:
+        return None
+    return verify_telegram_init_data(init_data)
 
 
 # ============ BOT (webhook) ============
@@ -71,6 +83,8 @@ def ensure_db():
         _db_ready = True
 
 
+# ============ ROUTES ============
+
 @app.route("/")
 def root():
     return jsonify({"status": "ok", "service": "Ember API"})
@@ -85,6 +99,8 @@ def test_route():
     })
 
 
+# ---------- Отдача WebApp ----------
+
 @app.route("/webapp/")
 def webapp_index():
     return send_from_directory(WEBAPP_DIR, "index.html")
@@ -94,6 +110,8 @@ def webapp_index():
 def webapp_static(path):
     return send_from_directory(WEBAPP_DIR, path)
 
+
+# ---------- Регистрация ----------
 
 @app.route("/api/register", methods=["POST"])
 def api_register():
@@ -144,6 +162,163 @@ def api_register():
         print(f"create_user error: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+# ---------- Моя анкета ----------
+
+@app.route("/api/me", methods=["POST"])
+def api_me():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    u = run_async(get_user(tg_user["id"]))
+    if not u:
+        return jsonify({"error": "not registered"}), 404
+
+    return jsonify({
+        "user_id": u["user_id"],
+        "name": u["name"],
+        "age": u["age"],
+        "city": u["city"],
+        "bio": u["bio"],
+        "photo_id": u["photo_id"],
+        "is_verified": u["is_verified"],
+        "is_premium": u["is_premium"],
+    })
+
+
+# ---------- Лента ----------
+
+@app.route("/api/feed", methods=["POST"])
+def api_feed():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    user_id = tg_user["id"]
+
+    me = run_async(get_user(user_id))
+    if not me:
+        return jsonify({"error": "not registered"}), 404
+
+    profile = run_async(get_next_profile(user_id))
+    if not profile:
+        return jsonify({"profile": None})
+
+    return jsonify({
+        "profile": {
+            "user_id": profile["user_id"],
+            "name": profile["name"],
+            "age": profile["age"],
+            "city": profile["city"],
+            "bio": profile["bio"],
+            "photo_id": profile["photo_id"],
+            "is_verified": profile["is_verified"],
+            "is_premium": profile["is_premium"],
+        }
+    })
+
+
+# ---------- Лайк ----------
+
+@app.route("/api/like", methods=["POST"])
+def api_like():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    from_id = tg_user["id"]
+    data = request.get_json(silent=True) or {}
+    to_id = data.get("to_id")
+
+    if not to_id or not isinstance(to_id, int):
+        return jsonify({"error": "missing to_id"}), 400
+
+    is_match = run_async(add_like(from_id, to_id))
+
+    # Если мэтч — уведомляем обоих через бота
+    if is_match and _bot:
+        try:
+            me = run_async(get_user_info(from_id))
+            partner = run_async(get_user_info(to_id))
+
+            # Партнёру
+            if me:
+                text_partner = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
+                if me["username"]:
+                    text_partner += f"\n👉 @{me['username']}"
+                else:
+                    text_partner += f"\nПопроси написать тебе первым."
+                run_async(_bot.send_message(to_id, text_partner))
+
+            # Мне
+            if partner:
+                text_me = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
+                if partner["username"]:
+                    text_me += f"\n👉 @{partner['username']}"
+                else:
+                    text_me += f"\nПопроси написать первым."
+                run_async(_bot.send_message(from_id, text_me))
+        except Exception as e:
+            print(f"match notify error: {e}")
+
+    return jsonify({"ok": True, "match": is_match})
+
+
+# ---------- Пропуск ----------
+
+@app.route("/api/skip", methods=["POST"])
+def api_skip():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    from_id = tg_user["id"]
+    data = request.get_json(silent=True) or {}
+    to_id = data.get("to_id")
+
+    if not to_id or not isinstance(to_id, int):
+        return jsonify({"error": "missing to_id"}), 400
+
+    run_async(add_skip(from_id, to_id))
+    return jsonify({"ok": True})
+
+
+# ---------- Мэтчи (кто у меня в мэтчах) ----------
+
+@app.route("/api/matches", methods=["POST"])
+def api_matches():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    user_id = tg_user["id"]
+
+    async def fetch_matches():
+        from database import pool
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT u.user_id, u.name, u.username, u.age, u.photo_id
+                FROM matches m
+                JOIN users u ON u.user_id = CASE
+                    WHEN m.user1 = $1 THEN m.user2
+                    ELSE m.user1
+                END
+                WHERE m.user1 = $1 OR m.user2 = $1
+                ORDER BY m.created_at DESC
+                LIMIT 50
+            """, user_id)
+            return [dict(r) for r in rows]
+
+    try:
+        matches = run_async(fetch_matches())
+        return jsonify({"matches": matches})
+    except Exception as e:
+        print(f"matches error: {e}")
+        return jsonify({"matches": []})
+
+
+# ---------- Профиль по ID (для просмотра чужой анкеты) ----------
 
 @app.route("/api/profile/<int:user_id>")
 def api_profile(user_id):
