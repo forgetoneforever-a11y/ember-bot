@@ -4,21 +4,19 @@ WEBAPP_URL = "https://ember-bot-6xwb.onrender.com/webapp/"
 
 
 def open_app_kb():
-    """Кнопка открытия WebApp (для новых юзеров)."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text="🔥 Открыть Ember",
-            web_app=WebAppInfo(url=WEBAPP_URL)
+            web_app=WebAppInfo(url=f"{WEBAPP_URL}?v=5")
         )
     ]])
 
 
 def main_menu_kb():
-    """Главное меню бота."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🔍 Смотреть анкеты",
-            web_app=WebAppInfo(url=f"{WEBAPP_URL}?screen=feed")  # ← добавили ?screen=feed
+            web_app=WebAppInfo(url=f"{WEBAPP_URL}?screen=feed&v=5")
         )],
         [
             InlineKeyboardButton(text="👤 Моя анкета", callback_data="my_profile"),
@@ -32,14 +30,12 @@ def main_menu_kb():
 
 
 def my_profile_kb():
-    """Кнопки под анкетой."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="🗑 Удалить", callback_data="delete_profile"),
     ]])
 
 
 def confirm_delete_kb():
-    """Подтверждение удаления анкеты."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Да, удалить", callback_data="confirm_delete"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_delete"),
@@ -47,7 +43,6 @@ def confirm_delete_kb():
 
 
 def profile_kb(user_id: int):
-    """Кнопки под чужой анкетой (если через бота)."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❤️", callback_data=f"like:{user_id}"),
         InlineKeyboardButton(text="👎", callback_data=f"skip:{user_id}"),
@@ -56,7 +51,6 @@ def profile_kb(user_id: int):
 
 
 def report_kb(user_id: int):
-    """Жалобы на анкету."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Спам", callback_data=f"rep_ok:{user_id}:spam")],
         [InlineKeyboardButton(text="18+ контент", callback_data=f"rep_ok:{user_id}:adult")],
@@ -66,7 +60,6 @@ def report_kb(user_id: int):
 
 
 def verify_decide_kb(user_id: int):
-    """Кнопки для АДМИНА: одобрить/отклонить верификацию."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Одобрить", callback_data=f"verify_ok:{user_id}"),
         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"verify_no:{user_id}"),
@@ -74,7 +67,6 @@ def verify_decide_kb(user_id: int):
 
 
 def premium_kb():
-    """Кнопки Premium."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⭐ Оформить", url="https://boosty.to/ember")],
     ])
