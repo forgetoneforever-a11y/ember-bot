@@ -1,5 +1,3 @@
-import asyncio
-import concurrent.futures
 import hmac
 import hashlib
 import json
@@ -10,12 +8,12 @@ from urllib.parse import parse_qsl
 from flask import (Flask, jsonify, request, send_from_directory, redirect,
                    session, render_template_string)
 from flask_cors import CORS
-from aiogram.types import Update, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import BOT_TOKEN, ADMIN_ID
 from database import (init_db, create_user, get_user,
                       get_next_profile, add_like, add_skip,
-                      get_user_info, set_city_filter)
+                      get_user_info, set_city_filter,
+                      get_matches, get_all_users, get_stats)
 
 
 app = Flask(__name__)
@@ -26,41 +24,8 @@ WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 
 # ============================================================
-# БЕЗОПАСНЫЙ ЗАПУСК ASYNC-ФУНКЦИЙ
+# ВЕРИФИКАЦИЯ ПОДПИСИ TELEGRAM
 # ============================================================
-
-def run_async(coro):
-    """Безопасно запускает async-функцию.
-    Если event loop уже запущен — создаёт новый в отдельном потоке.
-    Если нет — создаёт новый в текущем потоке.
-    """
-    try:
-        current_loop = asyncio.get_event_loop_policy().get_event_loop()
-        is_running = current_loop.is_running()
-    except Exception:
-        is_running = False
-
-    if is_running:
-        # Запускаем в отдельном потоке со своим loop
-        def runner():
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            try:
-                return new_loop.run_until_complete(coro)
-            finally:
-                new_loop.close()
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            return executor.submit(runner).result()
-    else:
-        # Запускаем в текущем потоке
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        try:
-            return new_loop.run_until_complete(coro)
-        finally:
-            new_loop.close()
-
 
 def verify_telegram_init_data(init_data: str):
     try:
@@ -88,23 +53,44 @@ def get_tg_user_from_request():
 
 
 # ============================================================
-# BOT (webhook)
+# ОТПРАВКА СООБЩЕНИЙ В TELEGRAM (напрямую через HTTP)
 # ============================================================
 
-_bot = None
-_dp = None
-_bot_ready = False
+def tg_send_message(chat_id: int, text: str):
+    try:
+        import requests as rq
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_message error: {e}")
 
 
-def ensure_bot():
-    global _bot, _dp, _bot_ready
-    if _bot_ready:
-        return
-    from bot import create_bot_and_dispatcher
-    _bot, _dp = create_bot_and_dispatcher()
-    _bot_ready = True
-    print("🤖 Бот инициализирован (webhook режим).")
+def tg_send_photo(chat_id: int, photo_id: str, caption: str = "", reply_markup: dict = None):
+    try:
+        import requests as rq
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_id,
+            "caption": caption,
+            "parse_mode": "HTML",
+        }
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+            json=payload,
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_photo error: {e}")
 
+
+# ============================================================
+# ИНИЦИАЛИЗАЦИЯ БАЗЫ
+# ============================================================
 
 _db_ready = False
 
@@ -113,7 +99,7 @@ _db_ready = False
 def ensure_db():
     global _db_ready
     if not _db_ready:
-        run_async(init_db())
+        init_db()
         _db_ready = True
 
 
@@ -208,11 +194,11 @@ def api_register():
         return jsonify({"error": "Нужно фото"}), 400
 
     try:
-        run_async(create_user({
+        create_user({
             "user_id": user_id, "username": username, "name": name,
             "age": age, "gender": gender, "looking_for": looking_for,
             "city": city, "bio": bio[:200], "photo_id": photo_id,
-        }))
+        })
         return jsonify({"ok": True})
     except Exception as e:
         print(f"create_user error: {e}")
@@ -227,7 +213,7 @@ def api_me():
     if not tg_user:
         return jsonify({"error": "invalid initData"}), 401
 
-    u = run_async(get_user(tg_user["id"]))
+    u = get_user(tg_user["id"])
     if not u:
         return jsonify({"error": "not registered"}), 404
 
@@ -238,9 +224,9 @@ def api_me():
         "city": u["city"],
         "bio": u["bio"],
         "photo_id": u["photo_id"],
-        "is_verified": u["is_verified"],
-        "is_premium": u["is_premium"],
-        "filter_city_only": u["filter_city_only"] if "filter_city_only" in u.keys() else False,
+        "is_verified": u.get("is_verified", False),
+        "is_premium": u.get("is_premium", False),
+        "filter_city_only": u.get("filter_city_only", False),
     })
 
 
@@ -255,7 +241,7 @@ def api_filter_city():
     data = request.get_json(silent=True) or {}
     only_city = bool(data.get("only_city", False))
 
-    run_async(set_city_filter(tg_user["id"], only_city))
+    set_city_filter(tg_user["id"], only_city)
     return jsonify({"ok": True, "only_city": only_city})
 
 
@@ -268,11 +254,11 @@ def api_feed():
         return jsonify({"error": "invalid initData"}), 401
 
     user_id = tg_user["id"]
-    me = run_async(get_user(user_id))
+    me = get_user(user_id)
     if not me:
         return jsonify({"error": "not registered"}), 404
 
-    profile = run_async(get_next_profile(user_id))
+    profile = get_next_profile(user_id)
     if not profile:
         return jsonify({"profile": None})
 
@@ -305,55 +291,41 @@ def api_like():
     if not to_id or not isinstance(to_id, int):
         return jsonify({"error": "missing to_id"}), 400
 
-    is_match = run_async(add_like(from_id, to_id))
+    is_match = add_like(from_id, to_id)
 
-    if _bot:
-        try:
-            me = run_async(get_user_info(from_id))
-            partner = run_async(get_user_info(to_id))
-            me_full = run_async(get_user(from_id))
+    # Уведомления через Telegram HTTP
+    try:
+        me = get_user_info(from_id)
+        partner = get_user_info(to_id)
+        me_full = get_user(from_id)
 
-            if is_match:
-                if me and partner:
-                    text_partner = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
-                    if me["username"]:
-                        text_partner += f"\n👉 @{me['username']}"
-                    try:
-                        run_async(_bot.send_message(to_id, text_partner))
-                    except Exception:
-                        pass
+        if is_match:
+            if me and partner:
+                text_partner = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
+                if me["username"]:
+                    text_partner += f"\n👉 @{me['username']}"
+                tg_send_message(to_id, text_partner)
 
-                    text_me = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
-                    if partner["username"]:
-                        text_me += f"\n👉 @{partner['username']}"
-                    try:
-                        run_async(_bot.send_message(from_id, text_me))
-                    except Exception:
-                        pass
-            else:
-                if me and me_full:
-                    text = (
-                        f"❤️ <b>Тебя лайкнули!</b>\n\n"
-                        f"<b>{me['name']}, {me_full['age']}</b>\n"
-                        f"📍 {me_full['city']}\n\n"
-                        f"{me_full['bio']}"
-                    )
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="❤️ Ответить взаимно",
-                            callback_data=f"like_back:{from_id}"
-                        )
-                    ]])
-                    try:
-                        run_async(_bot.send_photo(
-                            to_id, me_full["photo_id"],
-                            caption=text,
-                            reply_markup=kb
-                        ))
-                    except Exception as e:
-                        print(f"like notify error: {e}")
-        except Exception as e:
-            print(f"match notify error: {e}")
+                text_me = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
+                if partner["username"]:
+                    text_me += f"\n👉 @{partner['username']}"
+                tg_send_message(from_id, text_me)
+        else:
+            if me and me_full:
+                text = (
+                    f"❤️ <b>Тебя лайкнули!</b>\n\n"
+                    f"<b>{me['name']}, {me_full['age']}</b>\n"
+                    f"📍 {me_full['city']}\n\n"
+                    f"{me_full['bio']}"
+                )
+                kb = {
+                    "inline_keyboard": [[
+                        {"text": "❤️ Ответить взаимно", "callback_data": f"like_back:{from_id}"}
+                    ]]
+                }
+                tg_send_photo(to_id, me_full["photo_id"], text, kb)
+    except Exception as e:
+        print(f"like notify error: {e}")
 
     return jsonify({"ok": True, "match": is_match})
 
@@ -373,7 +345,7 @@ def api_skip():
     if not to_id or not isinstance(to_id, int):
         return jsonify({"error": "missing to_id"}), 400
 
-    run_async(add_skip(from_id, to_id))
+    add_skip(from_id, to_id)
     return jsonify({"ok": True})
 
 
@@ -387,24 +359,8 @@ def api_matches():
 
     user_id = tg_user["id"]
 
-    async def fetch_matches():
-        from database import pool
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT u.user_id, u.name, u.username, u.age, u.photo_id
-                FROM matches m
-                JOIN users u ON u.user_id = CASE
-                    WHEN m.user1 = $1 THEN m.user2
-                    ELSE m.user1
-                END
-                WHERE m.user1 = $1 OR m.user2 = $1
-                ORDER BY m.created_at DESC
-                LIMIT 50
-            """, user_id)
-            return [dict(r) for r in rows]
-
     try:
-        matches = run_async(fetch_matches())
+        matches = get_matches(user_id)
         return jsonify({"matches": matches})
     except Exception as e:
         print(f"matches error: {e}")
@@ -415,7 +371,7 @@ def api_matches():
 
 @app.route("/api/profile/<int:user_id>")
 def api_profile(user_id):
-    u = run_async(get_user(user_id))
+    u = get_user(user_id)
     if not u:
         return jsonify({"error": "not found"}), 404
     return jsonify({
@@ -552,138 +508,21 @@ def admin_logout():
 @app.route("/admin")
 @admin_required
 def admin_panel():
-    async def fetch_data():
-        from database import pool
-        async with pool.acquire() as conn:
-            users = await conn.fetch("""
-                SELECT user_id, username, name, age, gender, looking_for,
-                       city, views, likes_received, is_verified, is_active, is_premium
-                FROM users
-                ORDER BY created_at DESC
-                LIMIT 500
-            """)
-            total = await conn.fetchval("SELECT COUNT(*) FROM users")
-            active = await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_active=TRUE")
-            verified = await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_verified=TRUE")
-            likes = await conn.fetchval("SELECT COUNT(*) FROM likes")
-            matches = await conn.fetchval("SELECT COUNT(*) FROM matches")
-            reports = await conn.fetchval("SELECT COUNT(*) FROM reports")
-            return {
-                "users": [dict(u) for u in users],
-                "stats": {
-                    "total": total, "active": active, "verified": verified,
-                    "likes": likes, "matches": matches, "reports": reports,
-                }
-            }
-
-    data = run_async(fetch_data())
+    users = get_all_users()
+    stats = get_stats()
     return render_template_string(
         ADMIN_PANEL_HTML,
-        users=data["users"],
-        stats=data["stats"]
+        users=users,
+        stats=stats
     )
 
 
 @app.route("/admin/ban/<int:user_id>", methods=["POST"])
 @admin_required
 def admin_ban(user_id):
-    async def do_ban():
-        from database import pool
-        async with pool.acquire() as conn:
-            await conn.execute("UPDATE users SET is_active=FALSE WHERE user_id=$1", user_id)
-    run_async(do_ban())
+    from database import deactivate_user
+    deactivate_user(user_id)
     return redirect("/admin")
-
-
-# ============================================================
-# WEBHOOK
-# ============================================================
-
-@app.route("/webhook/<secret>", methods=["POST"])
-def telegram_webhook(secret):
-    expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-    if secret != expected:
-        return jsonify({"error": "forbidden"}), 403
-    try:
-        ensure_bot()
-        update_data = request.get_json(force=True)
-        update = Update.model_validate(update_data)
-
-        async def process():
-            await _dp.feed_update(_bot, update)
-
-        run_async(process())
-        return jsonify({"ok": True})
-    except Exception as e:
-        print(f"webhook error: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/set_webhook")
-def set_webhook():
-    try:
-        ensure_bot()
-        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
-        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-        webhook_url = f"{render_url}/webhook/{secret}"
-
-        async def set_it():
-            await _bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-            info = await _bot.get_webhook_info()
-            return info
-
-        info = run_async(set_it())
-        return jsonify({
-            "ok": True,
-            "webhook_url": webhook_url,
-            "telegram_says": {
-                "url": info.url,
-                "pending_update_count": info.pending_update_count,
-                "last_error_message": info.last_error_message,
-            }
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/delete_webhook")
-def delete_webhook():
-    try:
-        ensure_bot()
-
-        async def del_it():
-            await _bot.delete_webhook(drop_pending_updates=True)
-
-        run_async(del_it())
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-# ============================================================
-# АВТО-WEBHOOK
-# ============================================================
-
-def _auto_set_webhook():
-    try:
-        import time
-        time.sleep(3)
-        import requests as rq
-        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
-        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-        webhook_url = f"{render_url}/webhook/{secret}"
-        r = rq.get(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}&drop_pending_updates=true",
-            timeout=10
-        )
-        print(f"🔗 Авто-webhook: {r.json()}")
-    except Exception as e:
-        print(f"auto webhook error: {e}")
-
-
-if os.getenv("RENDER"):
-    import threading
-    threading.Thread(target=_auto_set_webhook, daemon=True).start()
 
 
 if __name__ == "__main__":
