@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import hashlib
 import json
+import os
 from urllib.parse import parse_qsl
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -11,8 +12,12 @@ from config import BOT_TOKEN
 from database import init_db, create_user, get_user
 
 
-app = Flask(__name__, static_folder="webapp", static_url_path="/webapp")
+app = Flask(__name__)
 CORS(app)
+
+# --- Путь к папке webapp (абсолютный, чтобы Render точно нашёл) ---
+WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+
 
 # --- Отдельный event loop для асинхронных функций из Flask ---
 loop = asyncio.new_event_loop()
@@ -84,12 +89,12 @@ def root():
 # --- Отдача WebApp ---
 @app.route("/webapp/")
 def webapp_index():
-    return send_from_directory("webapp", "index.html")
+    return send_from_directory(WEBAPP_DIR, "index.html")
 
 
 @app.route("/webapp/<path:path>")
 def webapp_static(path):
-    return send_from_directory("webapp", path)
+    return send_from_directory(WEBAPP_DIR, path)
 
 
 # --- Регистрация анкеты из WebApp ---
