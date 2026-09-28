@@ -14,7 +14,7 @@ from aiogram.types import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, ADMIN_ID
 from database import (init_db, create_user, get_user,
                       get_next_profile, add_like, add_skip,
-                      get_user_info)
+                      get_user_info, set_city_filter)
 
 
 app = Flask(__name__)
@@ -208,7 +208,23 @@ def api_me():
         "photo_id": u["photo_id"],
         "is_verified": u["is_verified"],
         "is_premium": u["is_premium"],
+        "filter_city_only": u["filter_city_only"] if "filter_city_only" in u.keys() else False,
     })
+
+
+# ---------- Фильтр по городу ----------
+
+@app.route("/api/filter/city", methods=["POST"])
+def api_filter_city():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    data = request.get_json(silent=True) or {}
+    only_city = bool(data.get("only_city", False))
+
+    run_async(set_city_filter(tg_user["id"], only_city))
+    return jsonify({"ok": True, "only_city": only_city})
 
 
 # ---------- Лента ----------
@@ -269,7 +285,6 @@ def api_like():
             if is_match:
                 # МЭТЧ — уведомляем обоих
                 if me and partner:
-                    # Партнёру
                     text_partner = (
                         f"💘 <b>У тебя искра!</b>\n\n"
                         f"Вы с <b>{me['name']}</b> лайкнули друг друга."
@@ -281,7 +296,6 @@ def api_like():
                     except Exception:
                         pass
 
-                    # Мне
                     text_me = (
                         f"💘 <b>У тебя искра!</b>\n\n"
                         f"Вы с <b>{partner['name']}</b> лайкнули друг друга."
@@ -624,7 +638,6 @@ def delete_webhook():
 # ============ АВТО-WEBHOOK ============
 
 def _auto_set_webhook():
-    """Автоматически ставим webhook при старте (для Render)."""
     try:
         import time
         time.sleep(3)
