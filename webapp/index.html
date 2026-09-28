@@ -19,9 +19,7 @@
 
     <!-- ЭКРАН 1: ИМЯ -->
     <section class="screen active" id="screen-name">
-      <div class="mascot">
-        <img src="images/girl.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/girl.jpg" alt="Ember"></div>
       <h1>Познакомимся?</h1>
       <p class="subtitle">Начнём с твоего имени</p>
 
@@ -37,9 +35,7 @@
 
     <!-- ЭКРАН 2: ВОЗРАСТ -->
     <section class="screen" id="screen-age">
-      <div class="mascot">
-        <img src="images/mascot.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
       <h1>Сколько тебе лет?</h1>
       <p class="subtitle">Только 18+</p>
 
@@ -60,9 +56,7 @@
 
     <!-- ЭКРАН 3: ПОЛ -->
     <section class="screen" id="screen-gender">
-      <div class="mascot">
-        <img src="images/girl.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/girl.jpg" alt="Ember"></div>
       <h1>Кто ты?</h1>
       <p class="subtitle">И кого мы будем искать</p>
 
@@ -77,9 +71,7 @@
 
     <!-- ЭКРАН 4: ГОРОД -->
     <section class="screen" id="screen-city">
-      <div class="mascot">
-        <img src="images/boy.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/boy.jpg" alt="Ember"></div>
       <h1>Откуда ты?</h1>
       <p class="subtitle">Будем показывать людей рядом</p>
 
@@ -91,9 +83,7 @@
 
     <!-- ЭКРАН 5: О СЕБЕ -->
     <section class="screen" id="screen-bio">
-      <div class="mascot">
-        <img src="images/girl.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/girl.jpg" alt="Ember"></div>
       <h1>О себе</h1>
       <p class="subtitle">Напиши что-то интересное</p>
 
@@ -106,9 +96,7 @@
 
     <!-- ЭКРАН 6: ФОТО -->
     <section class="screen" id="screen-photo">
-      <div class="mascot">
-        <img src="images/mascot.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
       <h1>Твоё фото</h1>
       <p class="subtitle">Отправь фотографию через бота</p>
 
@@ -123,18 +111,77 @@
       </div>
 
       <p class="hint" id="photo-status">Фото ещё не загружено</p>
-
       <button class="btn-primary" id="btn-save" disabled>Сохранить анкету</button>
     </section>
 
     <!-- ЭКРАН 7: ГОТОВО -->
     <section class="screen" id="screen-done">
-      <div class="mascot">
-        <img src="images/girl.jpg" alt="Ember">
-      </div>
+      <div class="mascot"><img src="images/girl.jpg" alt="Ember"></div>
       <h1>Анкета готова! 🎉</h1>
       <p class="subtitle">Теперь ты в Ember</p>
       <button class="btn-primary" id="btn-close">Закрыть</button>
+    </section>
+
+    <!-- ЭКРАН 8: ЛЕНТА АНКЕТ (FEED) -->
+    <section class="screen" id="screen-feed">
+      <div class="feed-header">
+        <h2>🔍 Поиск</h2>
+      </div>
+
+      <div class="card-wrapper" id="card-wrapper">
+        <div class="empty-feed" id="empty-feed" style="display:none;">
+          <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
+          <h2>Пока никого</h2>
+          <p class="subtitle">Заходи позже — люди присоединяются</p>
+          <button class="btn-primary" id="btn-back-menu">Назад</button>
+        </div>
+
+        <div class="card" id="card" style="display:none;">
+          <div class="card-photo">
+            <img id="card-img" src="" alt="Фото">
+            <div class="card-badges" id="card-badges"></div>
+          </div>
+          <div class="card-info">
+            <h2><span id="card-name"></span>, <span id="card-age"></span></h2>
+            <p class="card-city">📍 <span id="card-city"></span></p>
+            <p class="card-bio" id="card-bio"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="feed-actions" id="feed-actions" style="display:none;">
+        <button class="action-btn skip" id="btn-skip">👎</button>
+        <button class="action-btn like" id="btn-like">❤️</button>
+      </div>
+
+      <div class="loading-feed" id="loading-feed">
+        <p>Загружаем анкеты...</p>
+      </div>
+    </section>
+
+    <!-- ЭКРАН 9: МЭТЧ -->
+    <section class="screen" id="screen-match">
+      <div class="mascot"><img src="images/girl.jpg" alt="Ember"></div>
+      <h1>💘 Искра!</h1>
+      <p class="subtitle" id="match-text">Вы лайкнули друг друга!</p>
+      <button class="btn-primary" id="btn-match-next">Смотреть дальше</button>
+    </section>
+
+    <!-- ЭКРАН 10: МЭТЧИ (список) -->
+    <section class="screen" id="screen-matches">
+      <div class="feed-header">
+        <h2>💘 Мои мэтчи</h2>
+      </div>
+
+      <div id="matches-list" class="matches-list"></div>
+
+      <div class="empty-matches" id="empty-matches" style="display:none;">
+        <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
+        <h2>Пока пусто</h2>
+        <p class="subtitle">Лайкай анкеты — мэтчи появятся тут</p>
+      </div>
+
+      <button class="btn-primary" id="btn-matches-back">Назад</button>
     </section>
 
   </div>
