@@ -158,6 +158,7 @@ async def create_user(data: dict):
 
 
 async def deactivate_user(user_id: int):
+    """Мягкое удаление — просто выключает анкету."""
     async with pool.acquire() as conn:
         await conn.execute("UPDATE users SET is_active=FALSE WHERE user_id=$1", user_id)
 
@@ -304,3 +305,28 @@ async def get_verification_status(user_id: int):
             user_id
         )
         return row["status"] if row else None
+
+
+# ============================================================
+# === УДАЛЕНИЕ АККАУНТА ===
+# ============================================================
+
+async def delete_user_completely(user_id: int):
+    """Полностью удаляет пользователя и все его данные."""
+    async with pool.acquire() as conn:
+        # Лайки, которые он ставил и получал
+        await conn.execute("DELETE FROM likes WHERE from_id=$1", user_id)
+        await conn.execute("DELETE FROM likes WHERE to_id=$1", user_id)
+        # Просмотры
+        await conn.execute("DELETE FROM views WHERE from_id=$1", user_id)
+        await conn.execute("DELETE FROM views WHERE to_id=$1", user_id)
+        # Мэтчи
+        await conn.execute("DELETE FROM matches WHERE user1=$1 OR user2=$1", user_id)
+        # Жалобы
+        await conn.execute("DELETE FROM reports WHERE from_id=$1 OR to_id=$1", user_id)
+        # Верификация
+        await conn.execute("DELETE FROM verification WHERE user_id=$1", user_id)
+        # Временное фото
+        await conn.execute("DELETE FROM temp_photos WHERE user_id=$1", user_id)
+        # Сама анкета
+        await conn.execute("DELETE FROM users WHERE user_id=$1", user_id)
