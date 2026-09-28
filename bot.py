@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -17,7 +18,6 @@ logging.basicConfig(level=logging.INFO)
 
 WEBAPP_URL = "https://ember-bot-6xwb.onrender.com/webapp/"
 
-# Храним, кто сейчас в процессе верификации
 pending_verification = set()
 
 
@@ -26,11 +26,11 @@ def create_bot_and_dispatcher():
     dp = Dispatcher()
 
     # ============================================================
-    # === /start ===
+    # /start
     # ============================================================
     @dp.message(Command("start"))
     async def cmd_start(msg: Message):
-        u = await get_user(msg.from_user.id)
+        u = get_user(msg.from_user.id)
 
         if u:
             from keyboards import main_menu_kb
@@ -51,7 +51,7 @@ def create_bot_and_dispatcher():
             )
 
     # ============================================================
-    # === /help ===
+    # /help
     # ============================================================
     @dp.message(Command("help"))
     async def cmd_help(msg: Message):
@@ -67,11 +67,11 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === /feed ===
+    # /feed
     # ============================================================
     @dp.message(Command("feed"))
     async def cmd_feed(msg: Message):
-        u = await get_user(msg.from_user.id)
+        u = get_user(msg.from_user.id)
         if not u:
             from keyboards import open_app_kb
             await msg.answer("Сначала создай анкету 👇", reply_markup=open_app_kb())
@@ -80,7 +80,7 @@ def create_bot_and_dispatcher():
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
                 text="🔍 Открыть ленту",
-                web_app=WebAppInfo(url=f"{WEBAPP_URL}?screen=feed&v=5")
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}?screen=feed&v=6")
             )
         ]])
         await msg.answer(
@@ -91,7 +91,7 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === /photo ===
+    # /photo
     # ============================================================
     @dp.message(Command("photo"))
     async def cmd_photo(msg: Message):
@@ -105,21 +105,21 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === /verify ===
+    # /verify
     # ============================================================
     @dp.message(Command("verify"))
     async def cmd_verify(msg: Message):
-        u = await get_user(msg.from_user.id)
+        u = get_user(msg.from_user.id)
         if not u:
             from keyboards import open_app_kb
             await msg.answer("Сначала создай анкету 👇", reply_markup=open_app_kb())
             return
 
-        if u["is_verified"]:
+        if u.get("is_verified"):
             await msg.answer("✅ Ты уже верифицирован!")
             return
 
-        status = await get_verification_status(msg.from_user.id)
+        status = get_verification_status(msg.from_user.id)
         if status == "pending":
             await msg.answer("⏳ Твоя заявка на проверке. Подожди до 24 часов.")
             return
@@ -139,11 +139,11 @@ def create_bot_and_dispatcher():
         pending_verification.add(msg.from_user.id)
 
     # ============================================================
-    # === /delete ===
+    # /delete
     # ============================================================
     @dp.message(Command("delete"))
     async def cmd_delete(msg: Message):
-        u = await get_user(msg.from_user.id)
+        u = get_user(msg.from_user.id)
         if not u:
             await msg.answer("У тебя нет анкеты. Нечего удалять.")
             return
@@ -157,21 +157,20 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === Приём фото (для /photo И /verify) ===
+    # Приём фото
     # ============================================================
     @dp.message(F.photo)
     async def handle_photo(msg: Message):
         user_id = msg.from_user.id
         photo_id = msg.photo[-1].file_id
 
-        # Если юзер в процессе верификации
         if user_id in pending_verification:
             pending_verification.discard(user_id)
-            await create_verification(user_id, photo_id)
+            create_verification(user_id, photo_id)
 
-            u = await get_user(user_id)
+            u = get_user(user_id)
             name = u["name"] if u else "???"
-            username = f"@{u['username']}" if u and u["username"] else "нет username"
+            username = f"@{u['username']}" if u and u.get("username") else "нет username"
 
             from keyboards import verify_decide_kb
             kb = verify_decide_kb(user_id)
@@ -196,13 +195,13 @@ def create_bot_and_dispatcher():
             )
             return
 
-        # Иначе — обычное фото для анкеты
+        # Обычное фото для анкеты
         try:
-            await save_temp_photo(user_id, photo_id)
+            save_temp_photo(user_id, photo_id)
         except Exception as e:
             print(f"save_temp_photo error: {e}")
 
-        webapp_url_with_photo = f"{WEBAPP_URL}?photo_id={photo_id}&v=5"
+        webapp_url_with_photo = f"{WEBAPP_URL}?photo_id={photo_id}&v=6"
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
                 text="🔥 Вернуться в Ember",
@@ -218,7 +217,7 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === Решение админа по верификации ===
+    # Верификация — решение админа
     # ============================================================
     @dp.callback_query(F.data.startswith("verify_ok:"))
     async def cb_verify_ok(cb: CallbackQuery):
@@ -226,7 +225,7 @@ def create_bot_and_dispatcher():
             await cb.answer("Только админ может это делать", show_alert=True)
             return
         user_id = int(cb.data.split(":")[1])
-        await approve_verification(user_id)
+        approve_verification(user_id)
         try:
             await bot.send_message(
                 user_id,
@@ -249,7 +248,7 @@ def create_bot_and_dispatcher():
             await cb.answer("Только админ может это делать", show_alert=True)
             return
         user_id = int(cb.data.split(":")[1])
-        await reject_verification(user_id)
+        reject_verification(user_id)
         try:
             await bot.send_message(
                 user_id,
@@ -267,27 +266,27 @@ def create_bot_and_dispatcher():
         await cb.answer("Отклонено!")
 
     # ============================================================
-    # === Callback "Ответить взаимно" ===
+    # Callback "Ответить взаимно"
     # ============================================================
     @dp.callback_query(F.data.startswith("like_back:"))
     async def cb_like_back(cb: CallbackQuery):
         from_id = cb.from_user.id
         to_id = int(cb.data.split(":")[1])
 
-        is_match = await add_like(from_id, to_id)
+        is_match = add_like(from_id, to_id)
 
         if is_match:
-            me = await get_user(from_id)
-            partner = await get_user(to_id)
+            me = get_user(from_id)
+            partner = get_user(to_id)
             try:
                 if me and partner:
                     text_me = f"💘 <b>Искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
-                    if partner["username"]:
+                    if partner.get("username"):
                         text_me += f"\n👉 @{partner['username']}"
                     await bot.send_message(from_id, text_me)
 
                     text_p = f"💘 <b>Искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
-                    if me["username"]:
+                    if me.get("username"):
                         text_p += f"\n👉 @{me['username']}"
                     await bot.send_message(to_id, text_p)
             except Exception as e:
@@ -305,22 +304,22 @@ def create_bot_and_dispatcher():
         await cb.answer("Готово!")
 
     # ============================================================
-    # === /test_db ===
+    # /test_db
     # ============================================================
     @dp.message(Command("test_db"))
     async def cmd_test_db(msg: Message):
         try:
-            count = await get_user_count()
+            count = get_user_count()
             await msg.answer(f"✅ База работает!\n\nПользователей: <b>{count}</b>")
         except Exception as e:
             await msg.answer(f"❌ Ошибка базы:\n<code>{e}</code>")
 
     # ============================================================
-    # === /profile ===
+    # /profile
     # ============================================================
     @dp.message(Command("profile"))
     async def cmd_profile(msg: Message):
-        u = await get_user(msg.from_user.id)
+        u = get_user(msg.from_user.id)
         if not u:
             from keyboards import open_app_kb
             await msg.answer(
@@ -336,11 +335,11 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === Callback "Моя анкета" ===
+    # Callback "Моя анкета"
     # ============================================================
     @dp.callback_query(F.data == "my_profile")
     async def cb_my_profile(cb: CallbackQuery):
-        u = await get_user(cb.from_user.id)
+        u = get_user(cb.from_user.id)
         if not u:
             await cb.answer("У тебя нет анкеты", show_alert=True)
             return
@@ -353,7 +352,7 @@ def create_bot_and_dispatcher():
         await cb.answer()
 
     # ============================================================
-    # === Удаление анкеты ===
+    # Удаление анкеты
     # ============================================================
     @dp.callback_query(F.data == "delete_profile")
     async def cb_delete_profile(cb: CallbackQuery):
@@ -370,7 +369,7 @@ def create_bot_and_dispatcher():
     async def cb_confirm_delete(cb: CallbackQuery):
         user_id = cb.from_user.id
         try:
-            await delete_user_completely(user_id)
+            delete_user_completely(user_id)
             await cb.message.edit_text(
                 "✅ <b>Анкета удалена.</b>\n\n"
                 "Все твои данные стёрты из базы.\n\n"
@@ -389,7 +388,7 @@ def create_bot_and_dispatcher():
         await cb.answer()
 
     # ============================================================
-    # === Кнопка "Верификация" в меню ===
+    # Кнопка "Верификация" в меню
     # ============================================================
     @dp.callback_query(F.data == "start_verify")
     async def cb_start_verify(cb: CallbackQuery):
@@ -397,7 +396,7 @@ def create_bot_and_dispatcher():
         await cb.answer()
 
     # ============================================================
-    # === Кнопка "Premium" ===
+    # Кнопка "Premium"
     # ============================================================
     @dp.callback_query(F.data == "show_premium")
     async def cb_show_premium(cb: CallbackQuery):
@@ -409,7 +408,7 @@ def create_bot_and_dispatcher():
         await cb.answer()
 
     # ============================================================
-    # === Кнопка "Помощь" ===
+    # Кнопка "Помощь"
     # ============================================================
     @dp.callback_query(F.data == "help")
     async def cb_help(cb: CallbackQuery):
@@ -428,11 +427,8 @@ def create_bot_and_dispatcher():
     return bot, dp
 
 
-# ============================================================
-# === Форматирование анкеты ===
-# ============================================================
 def format_profile(u) -> str:
-    username = f"@{u['username']}" if u["username"] else "скрыт"
+    username = f"@{u['username']}" if u.get("username") else "скрыт"
     verified = " ✓" if u.get("is_verified") else ""
     premium = " ⭐" if u.get("is_premium") else ""
     return (
@@ -445,13 +441,11 @@ def format_profile(u) -> str:
 
 
 # ============================================================
-# === Локальный запуск (polling) ===
+# ЛОКАЛЬНЫЙ ЗАПУСК (polling)
 # ============================================================
 if __name__ == "__main__":
-    import asyncio
-
     async def main():
-        await init_db()
+        init_db()
         bot, dp = create_bot_and_dispatcher()
         print(f"🔥 {BRAND} запущен локально (polling).")
         await dp.start_polling(bot)
