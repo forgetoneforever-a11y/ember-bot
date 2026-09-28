@@ -8,7 +8,14 @@ async def init_db():
     """Создаёт пул соединений и все таблицы, если их нет."""
     global pool
     if pool is None:
-        pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=5,
+            statement_cache_size=0,             # отключает кеш планов
+            max_cached_statement_lifetime=0,    # не хранить планы
+            max_cacheable_statement_size=0,     # не кешировать вообще
+        )
 
     async with pool.acquire() as conn:
         # Таблица пользователей
@@ -235,7 +242,6 @@ async def get_next_profile(user_id: int):
         """
         args = [user_id, me["looking_for"], me["gender"]]
 
-        # Фильтр по городу
         if me["filter_city_only"] and me["city"]:
             sql += " AND LOWER(city) = LOWER($4)"
             args.append(me["city"])
