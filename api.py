@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import hmac
 import hashlib
 import json
@@ -23,12 +24,25 @@ app.secret_key = os.getenv("SECRET_KEY", "ember_secret_key_12345")
 
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
 
+# ============================================================
+# БЕЗОПАСНЫЙ ЗАПУСК ASYNC-ФУНКЦИЙ ИЗ SYNC FLASK
+# ============================================================
 
 def run_async(coro):
-    return loop.run_until_complete(coro)
+    """Запускает async-функцию в отдельном потоке — безопасно из любого контекста.
+    Не конфликтует с event loop бота.
+    """
+    def runner():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(coro)
+        finally:
+            new_loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(runner).result()
 
 
 def verify_telegram_init_data(init_data: str):
@@ -58,7 +72,9 @@ def get_tg_user_from_request():
     return verify_telegram_init_data(init_data)
 
 
-# ============ BOT (webhook) ============
+# ============================================================
+# BOT (webhook)
+# ============================================================
 
 _bot = None
 _dp = None
@@ -86,7 +102,9 @@ def ensure_db():
         _db_ready = True
 
 
-# ============ ROUTES ============
+# ============================================================
+# ROUTES
+# ============================================================
 
 @app.route("/")
 def root():
@@ -106,7 +124,6 @@ def test_route():
 
 @app.route("/api/photo/<path:file_id>")
 def api_photo(file_id):
-    """Редирект на файл в Telegram по file_id."""
     try:
         import requests as rq
         r = rq.get(
@@ -283,7 +300,6 @@ def api_like():
             me_full = run_async(get_user(from_id))
 
             if is_match:
-                # МЭТЧ — уведомляем обоих
                 if me and partner:
                     text_partner = (
                         f"💘 <b>У тебя искра!</b>\n\n"
@@ -307,7 +323,6 @@ def api_like():
                     except Exception:
                         pass
             else:
-                # ОБЫЧНЫЙ ЛАЙК — уведомляем того, кого лайкнули
                 if me and me_full:
                     text = (
                         f"❤️ <b>Тебя лайкнули!</b>\n\n"
@@ -403,7 +418,9 @@ def api_profile(user_id):
     })
 
 
-# ============ АДМИН-ПАНЕЛЬ ============
+# ============================================================
+# АДМИН-ПАНЕЛЬ
+# ============================================================
 
 def admin_required(f):
     @wraps(f)
@@ -572,7 +589,9 @@ def admin_ban(user_id):
     return redirect("/admin")
 
 
-# ============ WEBHOOK ============
+# ============================================================
+# WEBHOOK
+# ============================================================
 
 @app.route("/webhook/<secret>", methods=["POST"])
 def telegram_webhook(secret):
@@ -635,7 +654,9 @@ def delete_webhook():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# ============ АВТО-WEBHOOK ============
+# ============================================================
+# АВТО-WEBHOOK
+# ============================================================
 
 def _auto_set_webhook():
     try:
