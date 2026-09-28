@@ -5,7 +5,7 @@ import json
 import os
 from urllib.parse import parse_qsl
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from flask_cors import CORS
 from aiogram.types import Update
 
@@ -97,6 +97,27 @@ def test_route():
         "webapp_exists": os.path.exists(WEBAPP_DIR),
         "files_in_webapp": os.listdir(WEBAPP_DIR) if os.path.exists(WEBAPP_DIR) else []
     })
+
+
+# ---------- Прокси фото из Telegram ----------
+
+@app.route("/api/photo/<path:file_id>")
+def api_photo(file_id):
+    """Редирект на файл в Telegram по file_id."""
+    try:
+        import requests as rq
+        r = rq.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}",
+            timeout=10
+        )
+        data = r.json()
+        if not data.get("ok"):
+            return "not found", 404
+        file_path = data["result"]["file_path"]
+        return redirect(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
+    except Exception as e:
+        print(f"photo proxy error: {e}")
+        return "error", 500
 
 
 # ---------- Отдача WebApp ----------
@@ -318,7 +339,7 @@ def api_matches():
         return jsonify({"matches": []})
 
 
-# ---------- Профиль по ID (для просмотра чужой анкеты) ----------
+# ---------- Профиль по ID ----------
 
 @app.route("/api/profile/<int:user_id>")
 def api_profile(user_id):
