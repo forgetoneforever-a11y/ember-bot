@@ -79,6 +79,76 @@ async function apiCall(path, extra = {}) {
 }
 
 // ============================================
+// НИЖНЯЯ НАВИГАЦИЯ (BOTTOM-NAV)
+// ============================================
+
+const bottomNav = document.getElementById("bottom-nav");
+const navButtons = document.querySelectorAll(".nav-btn");
+
+function setActiveNav(screenId) {
+  navButtons.forEach(btn => {
+    if (btn.dataset.screen === screenId) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  // Показываем панель только на главных экранах
+  if (["screen-feed", "screen-shop", "screen-support"].includes(screenId)) {
+    if (bottomNav) bottomNav.classList.add("visible");
+  } else {
+    if (bottomNav) bottomNav.classList.remove("visible");
+  }
+}
+
+navButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.screen;
+    haptic("light");
+    setActiveNav(target);
+
+    if (target === "screen-feed") {
+      showScreen("screen-feed");
+      if (!document.getElementById("card").style.display ||
+          document.getElementById("card").style.display === "none") {
+        loadNextProfile();
+      }
+    } else if (target === "screen-shop") {
+      showScreen("screen-shop");
+    } else if (target === "screen-support") {
+      showScreen("screen-support");
+    }
+  });
+});
+
+// Кнопка "Назад к анкетам" из магазина
+const shopBackBtn = document.getElementById("btn-shop-back");
+if (shopBackBtn) {
+  shopBackBtn.addEventListener("click", () => {
+    haptic("light");
+    setActiveNav("screen-feed");
+    showScreen("screen-feed");
+    loadNextProfile();
+  });
+}
+
+// Кнопка "Открыть бота" из поддержки
+const supportOpenBtn = document.getElementById("btn-support-open");
+if (supportOpenBtn) {
+  supportOpenBtn.addEventListener("click", () => {
+    haptic("light");
+    const botUsername = "Emberanon_bot";
+    const url = `https://t.me/${botUsername}?start=support`;
+    if (tg && tg.openTelegramLink) {
+      tg.openTelegramLink(url);
+    } else {
+      window.open(url, "_blank");
+    }
+  });
+}
+
+// ============================================
 // ЭКРАН 1: ИМЯ
 // ============================================
 document.getElementById("input-name").value = profile.name || "";
@@ -228,6 +298,7 @@ document.getElementById("btn-save").addEventListener("click", async () => {
     localStorage.removeItem(STORAGE_KEY);
     haptic("success");
     showScreen("screen-done");
+    setActiveNav("");
   } catch (err) {
     haptic("error");
     showError("Ошибка: " + err.message);
@@ -311,6 +382,7 @@ async function likeCurrent() {
       if (data.match) {
         document.getElementById("match-text").textContent = `Вы с ${currentProfile.name} лайкнули друг друга!`;
         showScreen("screen-match");
+        setActiveNav("");
       } else {
         await loadNextProfile();
       }
@@ -341,42 +413,8 @@ document.getElementById("btn-back-menu").addEventListener("click", () => {
 });
 document.getElementById("btn-match-next").addEventListener("click", () => {
   showScreen("screen-feed");
+  setActiveNav("screen-feed");
   loadNextProfile();
-});
-
-// ============================================
-// МЭТЧИ (список)
-// ============================================
-
-async function loadMatches() {
-  const list = document.getElementById("matches-list");
-  const empty = document.getElementById("empty-matches");
-  list.innerHTML = "";
-  empty.style.display = "none";
-
-  try {
-    const data = await apiCall("/api/matches");
-    const matches = data.matches || [];
-    if (matches.length === 0) { empty.style.display = "block"; return; }
-    matches.forEach(m => {
-      const a = document.createElement("a");
-      a.className = "match-item";
-      a.href = m.username ? `https://t.me/${m.username}` : "#";
-      if (!m.username) a.style.pointerEvents = "none";
-      a.target = "_blank";
-      a.innerHTML = `
-        <img src="/api/photo/${m.photo_id}" alt="${m.name}">
-        <div class="match-name">${m.name}</div>
-      `;
-      list.appendChild(a);
-    });
-  } catch (err) {
-    empty.style.display = "block";
-  }
-}
-
-document.getElementById("btn-matches-back").addEventListener("click", () => {
-  if (tg && tg.close) tg.close(); else window.close();
 });
 
 // ============================================
@@ -425,8 +463,6 @@ if (cityFilterBtn) {
   });
 }
 
-loadCityFilterState();
-
 // ============================================
 // СТАРТ
 // ============================================
@@ -441,36 +477,39 @@ const wantFeed = startParams.get("screen") === "feed";
   if (hasPhotoInUrl) {
     showScreen("screen-photo");
     checkPhoto();
+    setActiveNav("");
     return;
   }
 
-  if (wantFeed) {
-    try {
-      const data = await apiCall("/api/me");
-      console.log("apiCall /api/me:", data);
-      if (data && data.user_id) {
-        showScreen("screen-feed");
-        loadNextProfile();
-        return;
-      }
-    } catch (e) {
-      console.error("me check error:", e);
+  try {
+    const data = await apiCall("/api/me");
+    console.log("apiCall /api/me:", data);
+
+    if (data && data.user_id) {
+      showScreen("screen-feed");
+      setActiveNav("screen-feed");
+      loadCityFilterState();
+      loadNextProfile();
+      return;
     }
-    showScreen("screen-name");
-    return;
+  } catch (e) {
+    console.error("me check error:", e);
   }
 
-  if (profile.photo_id) {
-    showScreen("screen-feed");
-    loadNextProfile();
+  if (profile.photo_id && profile.name) {
+    showScreen("screen-photo");
+    checkPhoto();
+    setActiveNav("");
     return;
   }
 
   if (profile.name) {
     showScreen("screen-photo");
     checkPhoto();
+    setActiveNav("");
     return;
   }
 
   showScreen("screen-name");
+  setActiveNav("");
 })();
