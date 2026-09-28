@@ -12,10 +12,8 @@ if (tg) {
   } catch (e) {}
 }
 
-// ===== Ключ для сохранения =====
 const STORAGE_KEY = "ember_form_data";
 
-// ===== Восстанавливаем данные из localStorage =====
 function loadFormData() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -25,7 +23,6 @@ function loadFormData() {
   }
 }
 
-// ===== Данные анкеты =====
 const profile = {
   name: "",
   username: "",
@@ -35,17 +32,15 @@ const profile = {
   city: "",
   bio: "",
   photo_id: "",
-  ...loadFormData(),  // ← восстанавливаем сохранённое
+  ...loadFormData(),
 };
 
-// ===== Сохраняем данные в localStorage =====
 function saveFormData() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
   } catch (e) {}
 }
 
-// ===== Переключение экранов =====
 function showScreen(id) {
   const current = document.querySelector(".screen.active");
   const next = document.getElementById(id);
@@ -84,9 +79,7 @@ function haptic(type = "light") {
   }
 }
 
-// ============================================
-// ЭКРАН 1: ИМЯ
-// ============================================
+// ===== ЭКРАН 1: ИМЯ =====
 document.getElementById("input-name").value = profile.name || "";
 document.getElementById("input-username").value = profile.username ? "@" + profile.username : "";
 
@@ -102,14 +95,12 @@ document.getElementById("btn-next-1").addEventListener("click", () => {
 
   profile.name = name;
   profile.username = username;
-  saveFormData();  // ← сохраняем
+  saveFormData();
   haptic("light");
   showScreen("screen-age");
 });
 
-// ============================================
-// ЭКРАН 2: ВОЗРАСТ + КОГО ИЩЕШЬ
-// ============================================
+// ===== ЭКРАН 2: ВОЗРАСТ =====
 const ageInput = document.getElementById("input-age");
 const ageValue = document.getElementById("age-value");
 
@@ -125,11 +116,8 @@ ageInput.addEventListener("input", () => {
   haptic("light");
 });
 
-// Восстанавливаем выбранный "looking_for"
 document.querySelectorAll("#looking-chips .chip").forEach(chip => {
-  if (chip.dataset.value === profile.looking_for) {
-    chip.classList.add("selected");
-  }
+  if (chip.dataset.value === profile.looking_for) chip.classList.add("selected");
   chip.addEventListener("click", () => {
     document.querySelectorAll("#looking-chips .chip").forEach(c => c.classList.remove("selected"));
     chip.classList.add("selected");
@@ -149,13 +137,9 @@ document.getElementById("btn-next-2").addEventListener("click", () => {
   showScreen("screen-gender");
 });
 
-// ============================================
-// ЭКРАН 3: ПОЛ
-// ============================================
+// ===== ЭКРАН 3: ПОЛ =====
 document.querySelectorAll("#gender-chips .chip").forEach(chip => {
-  if (chip.dataset.value === profile.gender) {
-    chip.classList.add("selected");
-  }
+  if (chip.dataset.value === profile.gender) chip.classList.add("selected");
   chip.addEventListener("click", () => {
     document.querySelectorAll("#gender-chips .chip").forEach(c => c.classList.remove("selected"));
     chip.classList.add("selected");
@@ -175,9 +159,7 @@ document.getElementById("btn-next-3").addEventListener("click", () => {
   showScreen("screen-city");
 });
 
-// ============================================
-// ЭКРАН 4: ГОРОД
-// ============================================
+// ===== ЭКРАН 4: ГОРОД =====
 document.getElementById("input-city").value = profile.city || "";
 
 document.getElementById("btn-next-4").addEventListener("click", () => {
@@ -193,9 +175,7 @@ document.getElementById("btn-next-4").addEventListener("click", () => {
   showScreen("screen-bio");
 });
 
-// ============================================
-// ЭКРАН 5: О СЕБЕ
-// ============================================
+// ===== ЭКРАН 5: О СЕБЕ =====
 document.getElementById("input-bio").value = profile.bio || "";
 
 document.getElementById("btn-next-5").addEventListener("click", () => {
@@ -212,11 +192,8 @@ document.getElementById("btn-next-5").addEventListener("click", () => {
   checkPhoto();
 });
 
-// ============================================
-// ЭКРАН 6: ФОТО
-// ============================================
+// ===== ЭКРАН 6: ФОТО =====
 function checkPhoto() {
-  // 1. Приоритет — photo_id из URL (deep link от бота)
   const urlParams = new URLSearchParams(window.location.search);
   const urlPhotoId = urlParams.get("photo_id");
 
@@ -230,7 +207,6 @@ function checkPhoto() {
     return;
   }
 
-  // 2. Иначе — проверяем localStorage
   const savedPhoto = localStorage.getItem("ember_photo_id");
   if (savedPhoto) {
     profile.photo_id = savedPhoto;
@@ -249,9 +225,7 @@ setInterval(() => {
   }
 }, 2000);
 
-// ============================================
-// СОХРАНЕНИЕ АНКЕТЫ
-// ============================================
+// ===== СОХРАНЕНИЕ АНКЕТЫ =====
 document.getElementById("btn-save").addEventListener("click", async () => {
   const btn = document.getElementById("btn-save");
   btn.disabled = true;
@@ -273,7 +247,6 @@ document.getElementById("btn-save").addEventListener("click", async () => {
       throw new Error(data.error || "Ошибка сервера");
     }
 
-    // Успех — очищаем всё
     localStorage.removeItem("ember_photo_id");
     localStorage.removeItem(STORAGE_KEY);
     haptic("success");
@@ -286,38 +259,26 @@ document.getElementById("btn-save").addEventListener("click", async () => {
   }
 });
 
-// ============================================
-// ЗАКРЫТИЕ
-// ============================================
+// ===== ЗАКРЫТИЕ =====
 document.getElementById("btn-close").addEventListener("click", () => {
   haptic("light");
   if (tg && tg.close) tg.close();
   else window.close();
 });
 
-// ============================================
-// СТАРТ — С УМОМ
-// ============================================
-// Если в URL есть photo_id — сразу идём на экран фото.
-// Если нет — но есть name — на экран фото (продолжаем).
-// Иначе — на имя.
-
+// ===== СТАРТ =====
 const startParams = new URLSearchParams(window.location.search);
 const hasPhotoInUrl = startParams.get("photo_id");
 
 if (hasPhotoInUrl) {
-  // Открыт через deep link от бота — прыгаем сразу на фото
   showScreen("screen-photo");
   checkPhoto();
 } else if (profile.photo_id) {
-  // Фото уже сохранено — сразу на экран фото
   showScreen("screen-photo");
   checkPhoto();
 } else if (profile.name) {
-  // Форма уже частично заполнена — продолжаем с фото
   showScreen("screen-photo");
   checkPhoto();
 } else {
-  // Совсем новый пользователь — начинаем с имени
   showScreen("screen-name");
 }
