@@ -10,7 +10,7 @@ from config import BOT_TOKEN, BRAND, MIN_AGE, ADMIN_ID
 from database import (init_db, get_user, get_user_count, save_temp_photo,
                       create_verification, approve_verification,
                       reject_verification, get_verification_status,
-                      delete_user_completely)
+                      delete_user_completely, add_like)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -67,7 +67,7 @@ def create_bot_and_dispatcher():
         )
 
     # ============================================================
-    # === /feed — лента ===
+    # === /feed ===
     # ============================================================
     @dp.message(Command("feed"))
     async def cmd_feed(msg: Message):
@@ -265,6 +265,44 @@ def create_bot_and_dispatcher():
                 reply_markup=None
             )
         await cb.answer("Отклонено!")
+
+    # ============================================================
+    # === Callback "Ответить взаимно" ===
+    # ============================================================
+    @dp.callback_query(F.data.startswith("like_back:"))
+    async def cb_like_back(cb: CallbackQuery):
+        from_id = cb.from_user.id
+        to_id = int(cb.data.split(":")[1])
+
+        is_match = await add_like(from_id, to_id)
+
+        if is_match:
+            me = await get_user(from_id)
+            partner = await get_user(to_id)
+            try:
+                if me and partner:
+                    text_me = f"💘 <b>Искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
+                    if partner["username"]:
+                        text_me += f"\n👉 @{partner['username']}"
+                    await bot.send_message(from_id, text_me)
+
+                    text_p = f"💘 <b>Искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
+                    if me["username"]:
+                        text_p += f"\n👉 @{me['username']}"
+                    await bot.send_message(to_id, text_p)
+            except Exception as e:
+                print(f"like_back notify error: {e}")
+
+            await cb.message.edit_caption(
+                caption=(cb.message.caption or "") + "\n\n💘 <b>ВЗАИМНО! Искра!</b>",
+                reply_markup=None
+            )
+        else:
+            await cb.message.edit_caption(
+                caption=(cb.message.caption or "") + "\n\n❤️ Лайк отправлен!",
+                reply_markup=None
+            )
+        await cb.answer("Готово!")
 
     # ============================================================
     # === /test_db ===
