@@ -3,14 +3,11 @@ import hmac
 import hashlib
 import json
 import os
-import threading
 from urllib.parse import parse_qsl
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.types import Update
 
 from config import BOT_TOKEN
 from database import init_db, create_user, get_user
@@ -19,7 +16,6 @@ from database import init_db, create_user, get_user
 app = Flask(__name__)
 CORS(app)
 
-# --- Путь к папке webapp (абсолютный) ---
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 
@@ -29,7 +25,6 @@ asyncio.set_event_loop(loop)
 
 
 def run_async(coro):
-    """Запускает асинхронную функцию из синхронного Flask-контекста."""
     return loop.run_until_complete(coro)
 
 
@@ -40,66 +35,39 @@ def verify_telegram_init_data(init_data: str) -> dict | None:
         hash_ = parsed.pop("hash", None)
         if not hash_:
             return None
-
-        data_check_string = "\n".join(
-            f"{k}={v}" for k, v in sorted(parsed.items())
-        )
-
-        secret_key = hmac.new(
-            b"WebAppData",
-            BOT_TOKEN.encode(),
-            hashlib.sha256
-        ).digest()
-
-        computed_hash = hmac.new(
-            secret_key,
-            data_check_string.encode(),
-            hashlib.sha256
-        ).hexdigest()
-
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(computed_hash, hash_):
             return None
-
-        user_json = parsed.get("user", "{}")
-        return json.loads(user_json)
+        return json.loads(parsed.get("user", "{}"))
     except Exception as e:
-        print(f"verify_telegram_init_data error: {e}")
+        print(f"verify error: {e}")
         return None
 
 
 # ============================================================
-# === ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ ===
+# === BOT (webhook) =========================================
 # ============================================================
 
-def start_bot_in_thread():
-    """Запускает Telegram-бота в фоновом потоке."""
-    def bot_thread():
-        from bot import create_bot_and_dispatcher
-
-        async def run_bot():
-            # Инициализация базы
-            await init_db()
-
-            # Создаём бота
-            bot, dp = create_bot_and_dispatcher()
-
-            print("🔥 Ember bot запущен в фоне.")
-            try:
-                await dp.start_polling(bot)
-            except Exception as e:
-                print(f"❌ Ошибка бота: {e}")
-
-        # Отдельный event loop для потока бота
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        new_loop.run_until_complete(run_bot())
-
-    thread = threading.Thread(target=bot_thread, daemon=True)
-    thread.start()
-    print("🚀 Поток бота запущен.")
+# Глобальный объект бота — создаётся один раз при первом webhook-запросе
+_bot = None
+_dp = None
+_bot_ready = False
 
 
-# --- Инициализация базы при первом запросе ---
+def ensure_bot():
+    """Создаёт бота и диспетчер (один раз)."""
+    global _bot, _dp, _bot_ready
+    if _bot_ready:
+        return
+    from bot import create_bot_and_dispatcher
+    _bot, _dp = create_bot_and_dispatcher()
+    _bot_ready = True
+    print("🤖 Бот инициализирован (webhook режим).")
+
+
+# --- Инициализация базы ---
 _db_ready = False
 
 
@@ -149,7 +117,6 @@ def api_register():
 
     init_data = data.get("initData")
     profile = data.get("profile")
-
     if not init_data or not profile:
         return jsonify({"error": "missing initData or profile"}), 400
 
@@ -183,15 +150,9 @@ def api_register():
 
     try:
         run_async(create_user({
-            "user_id": user_id,
-            "username": username,
-            "name": name,
-            "age": age,
-            "gender": gender,
-            "looking_for": looking_for,
-            "city": city,
-            "bio": bio[:200],
-            "photo_id": photo_id,
+            "user_id": user_id, "username": username, "name": name,
+            "age": age, "gender": gender, "looking_for": looking_for,
+            "city": city, "bio": bio[:200], "photo_id": photo_id,
         }))
         return jsonify({"ok": True})
     except Exception as e:
@@ -206,22 +167,80 @@ def api_profile(user_id):
     if not u:
         return jsonify({"error": "not found"}), 404
     return jsonify({
-        "user_id": u["user_id"],
-        "name": u["name"],
-        "age": u["age"],
-        "city": u["city"],
-        "bio": u["bio"],
-        "photo_id": u["photo_id"],
+        "user_id": u["user_id"], "name": u["name"], "age": u["age"],
+        "city": u["city"], "bio": u["bio"], "photo_id": u["photo_id"],
     })
 
 
-# --- Запуск бота при старте приложения ---
-# Запускаем ТОЛЬКО если это production (на Render).
-# На локальном компьютере бот запускается вручную через `python bot.py`.
-if os.getenv("RENDER") or os.getenv("START_BOT") == "1":
-    start_bot_in_thread()
+# ============================================================
+# === WEBHOOK ДЛЯ TELEGRAM ==================================
+# ============================================================
+
+@app.route("/webhook/<secret>", methods=["POST"])
+def telegram_webhook(secret):
+    """Telegram отправляет сюда все апдейты бота."""
+    expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+    if secret != expected:
+        return jsonify({"error": "forbidden"}), 403
+
+    try:
+        ensure_bot()
+        update_data = request.get_json(force=True)
+        update = Update.model_validate(update_data)
+
+        async def process():
+            await _dp.feed_update(_bot, update)
+
+        run_async(process())
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"webhook error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/set_webhook")
+def set_webhook():
+    """Устанавливает webhook в Telegram. Вызови один раз."""
+    try:
+        ensure_bot()
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
+        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+        webhook_url = f"{render_url}/webhook/{secret}"
+
+        async def set_it():
+            await _bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            info = await _bot.get_webhook_info()
+            return info
+
+        info = run_async(set_it())
+        return jsonify({
+            "ok": True,
+            "webhook_url": webhook_url,
+            "telegram_says": {
+                "url": info.url,
+                "has_custom_certificate": info.has_custom_certificate,
+                "pending_update_count": info.pending_update_count,
+                "last_error_message": info.last_error_message,
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/delete_webhook")
+def delete_webhook():
+    """Удаляет webhook (на случай отладки)."""
+    try:
+        ensure_bot()
+
+        async def del_it():
+            await _bot.delete_webhook(drop_pending_updates=True)
+
+        run_async(del_it())
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    # Локальный запуск — только API
     app.run(host="0.0.0.0", port=5000, debug=False)
