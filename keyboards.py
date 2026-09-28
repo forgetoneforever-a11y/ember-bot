@@ -18,7 +18,7 @@ def main_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🔍 Смотреть анкеты",
-            web_app=WebAppInfo(url=WEBAPP_URL)
+            web_app=WebAppInfo(url=f"{WEBAPP_URL}?screen=feed")  # ← добавили ?screen=feed
         )],
         [
             InlineKeyboardButton(text="👤 Моя анкета", callback_data="my_profile"),
@@ -47,7 +47,7 @@ def confirm_delete_kb():
 
 
 def profile_kb(user_id: int):
-    """Кнопки под чужой анкетой (в ленте, если через бота)."""
+    """Кнопки под чужой анкетой (если через бота)."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❤️", callback_data=f"like:{user_id}"),
         InlineKeyboardButton(text="👎", callback_data=f"skip:{user_id}"),
