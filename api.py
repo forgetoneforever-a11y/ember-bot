@@ -18,8 +18,6 @@ CORS(app)
 
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
-
-# --- Отдельный event loop для асинхронных функций из Flask ---
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
@@ -28,8 +26,7 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
-# --- Проверка подписи от Telegram WebApp ---
-def verify_telegram_init_data(init_data: str) -> dict | None:
+def verify_telegram_init_data(init_data: str):
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
         hash_ = parsed.pop("hash", None)
@@ -46,18 +43,14 @@ def verify_telegram_init_data(init_data: str) -> dict | None:
         return None
 
 
-# ============================================================
-# === BOT (webhook) =========================================
-# ============================================================
+# ============ BOT (webhook) ============
 
-# Глобальный объект бота — создаётся один раз при первом webhook-запросе
 _bot = None
 _dp = None
 _bot_ready = False
 
 
 def ensure_bot():
-    """Создаёт бота и диспетчер (один раз)."""
     global _bot, _dp, _bot_ready
     if _bot_ready:
         return
@@ -67,7 +60,6 @@ def ensure_bot():
     print("🤖 Бот инициализирован (webhook режим).")
 
 
-# --- Инициализация базы ---
 _db_ready = False
 
 
@@ -79,25 +71,22 @@ def ensure_db():
         _db_ready = True
 
 
-# --- Главная страница API ---
+# ============ ROUTES ============
+
 @app.route("/")
 def root():
     return jsonify({"status": "ok", "service": "Ember API"})
 
 
-# --- Тестовый роут ---
 @app.route("/test")
 def test_route():
     return jsonify({
-        "cwd": os.getcwd(),
-        "file_dir": os.path.dirname(os.path.abspath(__file__)),
         "webapp_dir": WEBAPP_DIR,
         "webapp_exists": os.path.exists(WEBAPP_DIR),
         "files_in_webapp": os.listdir(WEBAPP_DIR) if os.path.exists(WEBAPP_DIR) else []
     })
 
 
-# --- Отдача WebApp ---
 @app.route("/webapp/")
 def webapp_index():
     return send_from_directory(WEBAPP_DIR, "index.html")
@@ -108,13 +97,11 @@ def webapp_static(path):
     return send_from_directory(WEBAPP_DIR, path)
 
 
-# --- Регистрация анкеты из WebApp ---
 @app.route("/api/register", methods=["POST"])
 def api_register():
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "no data"}), 400
-
     init_data = data.get("initData")
     profile = data.get("profile")
     if not init_data or not profile:
@@ -160,7 +147,6 @@ def api_register():
         return jsonify({"error": str(e)}), 500
 
 
-# --- Получить анкету ---
 @app.route("/api/profile/<int:user_id>")
 def api_profile(user_id):
     u = run_async(get_user(user_id))
@@ -172,17 +158,13 @@ def api_profile(user_id):
     })
 
 
-# ============================================================
-# === WEBHOOK ДЛЯ TELEGRAM ==================================
-# ============================================================
+# ============ WEBHOOK ============
 
 @app.route("/webhook/<secret>", methods=["POST"])
 def telegram_webhook(secret):
-    """Telegram отправляет сюда все апдейты бота."""
     expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
     if secret != expected:
         return jsonify({"error": "forbidden"}), 403
-
     try:
         ensure_bot()
         update_data = request.get_json(force=True)
@@ -200,7 +182,6 @@ def telegram_webhook(secret):
 
 @app.route("/set_webhook")
 def set_webhook():
-    """Устанавливает webhook в Telegram. Вызови один раз."""
     try:
         ensure_bot()
         render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
@@ -218,7 +199,6 @@ def set_webhook():
             "webhook_url": webhook_url,
             "telegram_says": {
                 "url": info.url,
-                "has_custom_certificate": info.has_custom_certificate,
                 "pending_update_count": info.pending_update_count,
                 "last_error_message": info.last_error_message,
             }
@@ -229,7 +209,6 @@ def set_webhook():
 
 @app.route("/delete_webhook")
 def delete_webhook():
-    """Удаляет webhook (на случай отладки)."""
     try:
         ensure_bot()
 
