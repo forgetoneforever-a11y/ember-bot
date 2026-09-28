@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Ember — знакомства</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ЭКРАН 1: ИМЯ -->
+  <section class="screen active" id="screen-name">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Познакомимся?</h1>
+    <p class="subtitle">Начнём с твоего имени</p>
+
+    <label class="field-label">ИМЯ</label>
+    <input type="text" id="input-name" maxlength="32" placeholder="От 2 до 32 символов">
+
+    <label class="field-label">НИКНЕЙМ (Telegram)</label>
+    <input type="text" id="input-username" maxlength="32" placeholder="@username">
+    <p class="hint">Необязательно — можно не указывать</p>
+
+    <button class="btn-primary" id="btn-next-1">Далее</button>
+  </section>
+
+  <!-- ЭКРАН 2: ВОЗРАСТ -->
+  <section class="screen" id="screen-age">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Сколько тебе лет?</h1>
+    <p class="subtitle">Только 18+</p>
+
+    <label class="field-label">ВОЗРАСТ</label>
+    <div class="slider-box">
+      <span class="slider-value" id="age-value">18</span>
+      <input type="range" id="input-age" min="18" max="99" value="18">
+    </div>
+
+    <label class="field-label">КОГО ИЩЕШЬ</label>
+    <div class="chips" id="looking-chips">
+      <button class="chip" data-value="male">👦 Парней</button>
+      <button class="chip" data-value="female">👧 Девушек</button>
+    </div>
+
+    <button class="btn-primary" id="btn-next-2">Далее</button>
+  </section>
+
+  <!-- ЭКРАН 3: ПОЛ -->
+  <section class="screen" id="screen-gender">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Кто ты?</h1>
+    <p class="subtitle">И кого мы будем искать</p>
+
+    <label class="field-label">Я</label>
+    <div class="chips" id="gender-chips">
+      <button class="chip" data-value="male">👦 Парень</button>
+      <button class="chip" data-value="female">👧 Девушка</button>
+    </div>
+
+    <button class="btn-primary" id="btn-next-3">Далее</button>
+  </section>
+
+  <!-- ЭКРАН 4: ГОРОД -->
+  <section class="screen" id="screen-city">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Откуда ты?</h1>
+    <p class="subtitle">Будем показывать людей рядом</p>
+
+    <label class="field-label">ГОРОД</label>
+    <input type="text" id="input-city" maxlength="50" placeholder="Москва">
+
+    <button class="btn-primary" id="btn-next-4">Далее</button>
+  </section>
+
+  <!-- ЭКРАН 5: О СЕБЕ -->
+  <section class="screen" id="screen-bio">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>О себе</h1>
+    <p class="subtitle">Напиши что-то интересное</p>
+
+    <label class="field-label">ОПИСАНИЕ</label>
+    <textarea id="input-bio" maxlength="200" placeholder="Люблю музыку, гулять по вечерам, смотреть фильмы..."></textarea>
+    <p class="hint">Анкеты с описанием получают в 2 раза больше лайков 🔥</p>
+
+    <button class="btn-primary" id="btn-next-5">Далее</button>
+  </section>
+
+  <!-- ЭКРАН 6: ФОТО -->
+  <section class="screen" id="screen-photo">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Твоё фото</h1>
+    <p class="subtitle">Отправь фотографию через бота</p>
+
+    <div class="info-box">
+      <p>📸 <b>Как загрузить фото:</b></p>
+      <ol>
+        <li>Закрой это приложение</li>
+        <li>Напиши боту команду <code>/photo</code></li>
+        <li>Отправь фото</li>
+        <li>Вернись сюда и нажми «Сохранить»</li>
+      </ol>
+    </div>
+
+    <p class="hint" id="photo-status">Фото ещё не загружено</p>
+
+    <button class="btn-primary" id="btn-save" disabled>Сохранить анкету</button>
+  </section>
+
+  <!-- ЭКРАН 7: ГОТОВО -->
+  <section class="screen" id="screen-done">
+    <div class="mascot">
+      <img src="https://i.ibb.co/9kPZkGLL/ember-girl.png" alt="Ember" onerror="this.style.display='none'">
+    </div>
+    <h1>Анкета готова! 🎉</h1>
+    <p class="subtitle">Теперь ты в Ember</p>
+    <button class="btn-primary" id="btn-close">Закрыть</button>
+  </section>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
