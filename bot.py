@@ -1,8 +1,7 @@
-import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, Update
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
@@ -70,10 +69,7 @@ def create_bot_and_dispatcher():
             await msg.answer("У тебя ещё нет анкеты. Создай её в приложении:",
                              reply_markup=open_app_kb())
             return
-        await msg.answer_photo(
-            u["photo_id"],
-            caption=format_profile(u)
-        )
+        await msg.answer_photo(u["photo_id"], caption=format_profile(u))
 
     # ---------- callback "Моя анкета" ----------
     @dp.callback_query(F.data == "my_profile")
@@ -82,10 +78,7 @@ def create_bot_and_dispatcher():
         if not u:
             await cb.answer("У тебя нет анкеты", show_alert=True)
             return
-        await cb.message.answer_photo(
-            u["photo_id"],
-            caption=format_profile(u)
-        )
+        await cb.message.answer_photo(u["photo_id"], caption=format_profile(u))
 
     return bot, dp
 
@@ -101,13 +94,14 @@ def format_profile(u) -> str:
     )
 
 
-async def main():
-    """Запуск бота отдельно (для локального теста)."""
-    await init_db()
-    bot, dp = create_bot_and_dispatcher()
-    print(f"🔥 {BRAND} запущен. База подключена.")
-    await dp.start_polling(bot)
-
-
+# --- Отдельный запуск для локального теста (polling) ---
 if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        await init_db()
+        bot, dp = create_bot_and_dispatcher()
+        print(f"🔥 {BRAND} запущен локально (polling).")
+        await dp.start_polling(bot)
+
     asyncio.run(main())
