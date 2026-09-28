@@ -33,6 +33,17 @@ async def init_db():
         );
         """)
 
+        # На случай, если таблица была создана раньше без новых полей
+        await conn.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;
+        """)
+        await conn.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT FALSE;
+        """)
+        await conn.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS gems INT DEFAULT 100;
+        """)
+
         # Лайки
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS likes (
@@ -64,12 +75,32 @@ async def init_db():
         );
         """)
 
-        # Временное хранение фото (для регистрации через /photo)
+        # Временное хранение фото (для /photo)
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS temp_photos (
             user_id BIGINT PRIMARY KEY,
             photo_id TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+
+        # Верификация
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS verification (
+            user_id BIGINT PRIMARY KEY,
+            photo_id TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+
+        # Просмотры (кого уже видел юзер в ленте)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS views (
+            from_id BIGINT,
+            to_id BIGINT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (from_id, to_id)
         );
         """)
 
@@ -94,6 +125,15 @@ async def user_exists(user_id: int) -> bool:
 async def get_user(user_id: int):
     async with pool.acquire() as conn:
         return await conn.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)
+
+
+async def get_user_info(user_id: int):
+    """Краткая инфа о юзере (имя, username) — для уведомлений."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT name, username FROM users WHERE user_id=$1",
+            user_id
+        )
 
 
 async def create_user(data: dict):
@@ -127,7 +167,6 @@ async def deactivate_user(user_id: int):
 # ============================================================
 
 async def save_temp_photo(user_id: int, photo_id: str):
-    """Сохраняет последнее фото пользователя (до регистрации анкеты)."""
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO temp_photos(user_id, photo_id)
@@ -139,13 +178,129 @@ async def save_temp_photo(user_id: int, photo_id: str):
 
 
 async def get_temp_photo(user_id: int):
-    """Возвращает photo_id временного фото или None."""
     async with pool.acquire() as conn:
         try:
             row = await conn.fetchrow(
-                "SELECT photo_id FROM temp_photos WHERE user_id=$1",
-                user_id
-            )
+                "SELECT photo_id FROM temp_photos WHERE user_id=$1", user_id)
             return row["photo_id"] if row else None
         except Exception:
             return None
+
+
+# ============================================================
+# === ЛЕНТА / ЛАЙКИ / МЭТЧИ ===
+# ============================================================
+
+async def get_next_profile(user_id: int):
+    """Возвращает следующую анкету для показа в ленте."""
+    async with pool.acquire() as conn:
+        me = await conn.fetchrow(
+            "SELECT gender, looking_for FROM users WHERE user_id=$1 AND is_active=TRUE",
+            user_id
+        )
+        if not me:
+            return None
+
+        row = await conn.fetchrow("""
+            SELECT user_id, name, age, gender, city, bio, photo_id,
+                   is_verified, is_premium
+            FROM users
+            WHERE is_active = TRUE
+              AND user_id != $1
+              AND gender = $2
+              AND looking_for = $3
+              AND user_id NOT IN (SELECT to_id FROM views WHERE from_id=$1)
+              AND user_id NOT IN (SELECT to_id FROM likes WHERE from_id=$1)
+            ORDER BY is_verified DESC, RANDOM()
+            LIMIT 1
+        """, user_id, me["looking_for"], me["gender"])
+
+        if row:
+            await conn.execute(
+                "INSERT INTO views(from_id, to_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+                user_id, row["user_id"]
+            )
+        return row
+
+
+async def add_like(from_id: int, to_id: int) -> bool:
+    """Добавляет лайк. Возвращает True, если это мэтч."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO likes(from_id, to_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+            from_id, to_id
+        )
+        await conn.execute(
+            "UPDATE users SET likes_received = likes_received + 1 WHERE user_id=$1",
+            to_id
+        )
+        row = await conn.fetchrow(
+            "SELECT 1 FROM likes WHERE from_id=$1 AND to_id=$2",
+            to_id, from_id
+        )
+        if row:
+            u1, u2 = sorted([from_id, to_id])
+            await conn.execute(
+                "INSERT INTO matches(user1, user2) VALUES($1,$2) ON CONFLICT DO NOTHING",
+                u1, u2
+            )
+            return True
+        return False
+
+
+async def add_skip(from_id: int, to_id: int):
+    """Юзер пропустил анкету (не лайк и не мэтч)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO views(from_id, to_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+            from_id, to_id
+        )
+
+
+# ============================================================
+# === ВЕРИФИКАЦИЯ ===
+# ============================================================
+
+async def create_verification(user_id: int, photo_id: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO verification(user_id, photo_id, status)
+            VALUES($1, $2, 'pending')
+            ON CONFLICT (user_id) DO UPDATE SET
+                photo_id = EXCLUDED.photo_id,
+                status = 'pending',
+                created_at = NOW()
+        """, user_id, photo_id)
+
+
+async def approve_verification(user_id: int):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE verification SET status='approved' WHERE user_id=$1",
+            user_id
+        )
+        await conn.execute(
+            "UPDATE users SET is_verified=TRUE WHERE user_id=$1",
+            user_id
+        )
+
+
+async def reject_verification(user_id: int):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE verification SET status='rejected' WHERE user_id=$1",
+            user_id
+        )
+        await conn.execute(
+            "UPDATE users SET is_verified=FALSE WHERE user_id=$1",
+            user_id
+        )
+
+
+async def get_verification_status(user_id: int):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT status FROM verification WHERE user_id=$1",
+            user_id
+        )
+        return row["status"] if row else None
