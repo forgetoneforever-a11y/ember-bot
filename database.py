@@ -29,11 +29,12 @@ async def init_db():
             views INT DEFAULT 0,
             likes_received INT DEFAULT 0,
             gems INT DEFAULT 100,
+            filter_city_only BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT NOW()
         );
         """)
 
-        # На случай, если таблица была создана раньше без новых полей
+        # На случай, если таблица была создана раньше — добавляем недостающие поля
         await conn.execute("""
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;
         """)
@@ -42,6 +43,9 @@ async def init_db():
         """)
         await conn.execute("""
         ALTER TABLE users ADD COLUMN IF NOT EXISTS gems INT DEFAULT 100;
+        """)
+        await conn.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS filter_city_only BOOLEAN DEFAULT FALSE;
         """)
 
         # Лайки
@@ -75,7 +79,7 @@ async def init_db():
         );
         """)
 
-        # Временное хранение фото (для /photo)
+        # Временное хранение фото
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS temp_photos (
             user_id BIGINT PRIMARY KEY,
@@ -94,7 +98,7 @@ async def init_db():
         );
         """)
 
-        # Просмотры (кого уже видел юзер в ленте)
+        # Просмотры
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS views (
             from_id BIGINT,
@@ -164,6 +168,19 @@ async def deactivate_user(user_id: int):
 
 
 # ============================================================
+# === ФИЛЬТР ПО ГОРОДУ ===
+# ============================================================
+
+async def set_city_filter(user_id: int, only_city: bool):
+    """Включает/выключает фильтр по городу."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET filter_city_only=$1 WHERE user_id=$2",
+            only_city, user_id
+        )
+
+
+# ============================================================
 # === ВРЕМЕННЫЕ ФОТО ===
 # ============================================================
 
@@ -193,16 +210,19 @@ async def get_temp_photo(user_id: int):
 # ============================================================
 
 async def get_next_profile(user_id: int):
-    """Возвращает следующую анкету для показа в ленте."""
+    """Возвращает следующую анкету для ленты.
+    Учитывает фильтр по городу.
+    """
     async with pool.acquire() as conn:
         me = await conn.fetchrow(
-            "SELECT gender, looking_for FROM users WHERE user_id=$1 AND is_active=TRUE",
+            """SELECT gender, looking_for, city, filter_city_only
+               FROM users WHERE user_id=$1 AND is_active=TRUE""",
             user_id
         )
         if not me:
             return None
 
-        row = await conn.fetchrow("""
+        sql = """
             SELECT user_id, name, age, gender, city, bio, photo_id,
                    is_verified, is_premium
             FROM users
@@ -212,9 +232,17 @@ async def get_next_profile(user_id: int):
               AND looking_for = $3
               AND user_id NOT IN (SELECT to_id FROM views WHERE from_id=$1)
               AND user_id NOT IN (SELECT to_id FROM likes WHERE from_id=$1)
-            ORDER BY is_verified DESC, RANDOM()
-            LIMIT 1
-        """, user_id, me["looking_for"], me["gender"])
+        """
+        args = [user_id, me["looking_for"], me["gender"]]
+
+        # Фильтр по городу
+        if me["filter_city_only"] and me["city"]:
+            sql += " AND LOWER(city) = LOWER($4)"
+            args.append(me["city"])
+
+        sql += " ORDER BY is_verified DESC, RANDOM() LIMIT 1"
+
+        row = await conn.fetchrow(sql, *args)
 
         if row:
             await conn.execute(
@@ -250,7 +278,7 @@ async def add_like(from_id: int, to_id: int) -> bool:
 
 
 async def add_skip(from_id: int, to_id: int):
-    """Юзер пропустил анкету (не лайк и не мэтч)."""
+    """Юзер пропустил анкету."""
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO views(from_id, to_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
@@ -314,19 +342,12 @@ async def get_verification_status(user_id: int):
 async def delete_user_completely(user_id: int):
     """Полностью удаляет пользователя и все его данные."""
     async with pool.acquire() as conn:
-        # Лайки, которые он ставил и получал
         await conn.execute("DELETE FROM likes WHERE from_id=$1", user_id)
         await conn.execute("DELETE FROM likes WHERE to_id=$1", user_id)
-        # Просмотры
         await conn.execute("DELETE FROM views WHERE from_id=$1", user_id)
         await conn.execute("DELETE FROM views WHERE to_id=$1", user_id)
-        # Мэтчи
         await conn.execute("DELETE FROM matches WHERE user1=$1 OR user2=$1", user_id)
-        # Жалобы
         await conn.execute("DELETE FROM reports WHERE from_id=$1 OR to_id=$1", user_id)
-        # Верификация
         await conn.execute("DELETE FROM verification WHERE user_id=$1", user_id)
-        # Временное фото
         await conn.execute("DELETE FROM temp_photos WHERE user_id=$1", user_id)
-        # Сама анкета
         await conn.execute("DELETE FROM users WHERE user_id=$1", user_id)
