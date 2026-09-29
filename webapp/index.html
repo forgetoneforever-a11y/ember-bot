@@ -126,7 +126,6 @@
     <section class="screen" id="screen-feed">
       <div class="feed-header">
         <h2>🔍 Поиск</h2>
-        <button class="filter-btn" id="btn-city-filter">🌍 Вся страна</button>
       </div>
 
       <div class="card-wrapper" id="card-wrapper">
@@ -140,7 +139,6 @@
         <div class="card" id="card" style="display:none;">
           <div class="card-photo">
             <img id="card-img" src="" alt="Фото">
-            <div class="card-badges" id="card-badges"></div>
           </div>
           <div class="card-info">
             <h2><span id="card-name"></span>, <span id="card-age"></span></h2>
@@ -168,81 +166,7 @@
       <button class="btn-primary" id="btn-match-next">Смотреть дальше</button>
     </section>
 
-    <!-- ЭКРАН 10: МЭТЧИ (список) -->
-    <section class="screen" id="screen-matches">
-      <div class="feed-header">
-        <h2>💘 Мои мэтчи</h2>
-      </div>
-
-      <div id="matches-list" class="matches-list"></div>
-
-      <div class="empty-matches" id="empty-matches" style="display:none;">
-        <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
-        <h2>Пока пусто</h2>
-        <p class="subtitle">Лайкай анкеты — мэтчи появятся тут</p>
-      </div>
-
-      <button class="btn-primary" id="btn-matches-back">Назад</button>
-    </section>
-
-    <!-- ЭКРАН 11: МАГАЗИН -->
-    <section class="screen" id="screen-shop">
-      <div class="feed-header">
-        <h2>🛍 Магазин</h2>
-      </div>
-      <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
-      <h1>Premium скоро!</h1>
-      <p class="subtitle">Мы работаем над подпиской.<br>Тут будет:</p>
-      <div class="info-box">
-        <ul style="list-style:none;padding:0;line-height:1.8;">
-          <li>⭐ Значок Premium в анкете</li>
-          <li>👁 Видеть, кто тебя лайкнул</li>
-          <li>🚀 Буст анкеты — показ 5× чаще</li>
-          <li>♾️ Возврат к прошлым анкетам</li>
-        </ul>
-      </div>
-      <button class="btn-primary" id="btn-shop-back">Назад к анкетам</button>
-    </section>
-
-    <!-- ЭКРАН 12: ПОДДЕРЖКА -->
-    <section class="screen" id="screen-support">
-      <div class="feed-header">
-        <h2>💬 Поддержка</h2>
-      </div>
-      <div class="mascot"><img src="images/mascot.jpg" alt="Ember"></div>
-      <h1>Связь с нами</h1>
-      <p class="subtitle">Напиши нам в бота — ответим в течение 24 часов</p>
-
-      <div class="info-box">
-        <p>📩 <b>Как написать:</b></p>
-        <ol>
-          <li>Напиши боту команду <code>/support</code></li>
-          <li>Опиши проблему текстом</li>
-          <li>Можешь прикрепить фото или видео</li>
-          <li>Мы ответим тебе прямо в чат</li>
-        </ol>
-      </div>
-
-      <button class="btn-primary" id="btn-support-open">Открыть бота</button>
-    </section>
-
   </div>
-
-  <!-- НИЖНЯЯ НАВИГАЦИЯ -->
-  <nav class="bottom-nav" id="bottom-nav">
-    <button class="nav-btn active" data-screen="screen-feed">
-      <span class="nav-icon">🔍</span>
-      <span class="nav-label">Анкеты</span>
-    </button>
-    <button class="nav-btn" data-screen="screen-shop">
-      <span class="nav-icon">🛍</span>
-      <span class="nav-label">Магазин</span>
-    </button>
-    <button class="nav-btn" data-screen="screen-support">
-      <span class="nav-icon">💬</span>
-      <span class="nav-label">Поддержка</span>
-    </button>
-  </nav>
 
   <script src="app.js"></script>
 </body>
