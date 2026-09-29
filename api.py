@@ -19,10 +19,6 @@ CORS(app)
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
 
-# ============================================================
-# ВЕРИФИКАЦИЯ ПОДПИСИ TELEGRAM
-# ============================================================
-
 def verify_telegram_init_data(init_data: str):
     try:
         parsed = dict(parse_qsl(init_data, strict_parsing=True))
@@ -47,10 +43,6 @@ def get_tg_user_from_request():
         return None
     return verify_telegram_init_data(init_data)
 
-
-# ============================================================
-# ОТПРАВКА УВЕДОМЛЕНИЙ В TELEGRAM (HTTP)
-# ============================================================
 
 def tg_send_message(chat_id: int, text: str):
     try:
@@ -84,10 +76,6 @@ def tg_send_photo(chat_id: int, photo_id: str, caption: str = "", reply_markup: 
         print(f"tg_send_photo error: {e}")
 
 
-# ============================================================
-# ИНИЦИАЛИЗАЦИЯ БАЗЫ
-# ============================================================
-
 _db_ready = False
 
 
@@ -98,10 +86,6 @@ def ensure_db():
         init_db()
         _db_ready = True
 
-
-# ============================================================
-# ROUTES
-# ============================================================
 
 @app.route("/")
 def root():
