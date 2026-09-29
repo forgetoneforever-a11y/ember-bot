@@ -9,12 +9,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- Админ ---
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8617178928"))
-ADMIN_LOGIN = os.getenv("ADMIN_LOGIN", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change_me_123")
-
-# --- Безопасность ---
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
-SECRET_KEY = os.getenv("SECRET_KEY", "ember_secret_key_change_me_in_render")
 
 # --- Бренд ---
 BRAND = "Ember"
