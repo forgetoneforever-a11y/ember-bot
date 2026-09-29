@@ -117,8 +117,6 @@ def test_route():
     })
 
 
-# ---------- Прокси фото из Telegram ----------
-
 @app.route("/api/photo/<path:file_id>")
 def api_photo(file_id):
     try:
@@ -137,8 +135,6 @@ def api_photo(file_id):
         return "error", 500
 
 
-# ---------- Отдача WebApp ----------
-
 @app.route("/webapp/")
 def webapp_index():
     return send_from_directory(WEBAPP_DIR, "index.html")
@@ -148,8 +144,6 @@ def webapp_index():
 def webapp_static(path):
     return send_from_directory(WEBAPP_DIR, path)
 
-
-# ---------- Регистрация ----------
 
 @app.route("/api/register", methods=["POST"])
 def api_register():
@@ -208,8 +202,6 @@ def api_register():
         return jsonify({"error": str(e)}), 500
 
 
-# ---------- Моя анкета ----------
-
 @app.route("/api/me", methods=["POST"])
 def api_me():
     tg_user = get_tg_user_from_request()
@@ -229,8 +221,6 @@ def api_me():
         "photo_id": u["photo_id"],
     })
 
-
-# ---------- Лента ----------
 
 @app.route("/api/feed", methods=["POST"])
 def api_feed():
@@ -259,8 +249,6 @@ def api_feed():
     })
 
 
-# ---------- Лайк ----------
-
 @app.route("/api/like", methods=["POST"])
 def api_like():
     tg_user = get_tg_user_from_request()
@@ -276,7 +264,6 @@ def api_like():
 
     is_match = add_like(from_id, to_id)
 
-    # Уведомления через Telegram HTTP
     try:
         me = get_user_info(from_id)
         partner = get_user_info(to_id)
@@ -313,8 +300,6 @@ def api_like():
     return jsonify({"ok": True, "match": is_match})
 
 
-# ---------- Пропуск ----------
-
 @app.route("/api/skip", methods=["POST"])
 def api_skip():
     tg_user = get_tg_user_from_request()
@@ -331,10 +316,6 @@ def api_skip():
     add_skip(from_id, to_id)
     return jsonify({"ok": True})
 
-
-# ============================================================
-# ЗАПУСК
-# ============================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
