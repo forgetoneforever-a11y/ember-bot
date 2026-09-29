@@ -1,8 +1,310 @@
+import hmac
+import hashlib
+import json
+import os
+import threading
+from urllib.parse import parse_qsl
+
+from flask import (Flask, jsonify, request, send_from_directory, redirect)
+from flask_cors import CORS
+
+from config import BOT_TOKEN
+from database import (init_db, create_user, get_user,
+                      get_next_profile, add_like, add_skip,
+                      get_user_info)
+
+
+app = Flask(__name__)
+CORS(app)
+
+WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+
+
+def verify_telegram_init_data(init_data: str):
+    try:
+        parsed = dict(parse_qsl(init_data, strict_parsing=True))
+        hash_ = parsed.pop("hash", None)
+        if not hash_:
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(computed_hash, hash_):
+            return None
+        return json.loads(parsed.get("user", "{}"))
+    except Exception as e:
+        print(f"verify error: {e}")
+        return None
+
+
+def get_tg_user_from_request():
+    data = request.get_json(silent=True) or {}
+    init_data = data.get("initData")
+    if not init_data:
+        return None
+    return verify_telegram_init_data(init_data)
+
+
+def tg_send_message(chat_id: int, text: str):
+    try:
+        import requests as rq
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_message error: {e}")
+
+
+def tg_send_photo(chat_id: int, photo_id: str, caption: str = "", reply_markup: dict = None):
+    try:
+        import requests as rq
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_id,
+            "caption": caption,
+            "parse_mode": "HTML",
+        }
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        rq.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+            json=payload,
+            timeout=10
+        )
+    except Exception as e:
+        print(f"tg_send_photo error: {e}")
+
+
+_db_ready = False
+
+
+@app.before_request
+def ensure_db():
+    global _db_ready
+    if not _db_ready:
+        init_db()
+        _db_ready = True
+
+
+@app.route("/")
+def root():
+    return jsonify({"status": "ok", "service": "Ember API"})
+
+
+@app.route("/test")
+def test_route():
+    return jsonify({
+        "webapp_dir": WEBAPP_DIR,
+        "webapp_exists": os.path.exists(WEBAPP_DIR),
+        "files_in_webapp": os.listdir(WEBAPP_DIR) if os.path.exists(WEBAPP_DIR) else []
+    })
+
+
+@app.route("/api/photo/<path:file_id>")
+def api_photo(file_id):
+    try:
+        import requests as rq
+        r = rq.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}",
+            timeout=10
+        )
+        data = r.json()
+        if not data.get("ok"):
+            return "not found", 404
+        file_path = data["result"]["file_path"]
+        return redirect(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
+    except Exception as e:
+        print(f"photo proxy error: {e}")
+        return "error", 500
+
+
+@app.route("/webapp/")
+def webapp_index():
+    return send_from_directory(WEBAPP_DIR, "index.html")
+
+
+@app.route("/webapp/<path:path>")
+def webapp_static(path):
+    return send_from_directory(WEBAPP_DIR, path)
+
+
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "no data"}), 400
+
+    init_data = data.get("initData")
+    profile = data.get("profile")
+    if not init_data or not profile:
+        return jsonify({"error": "missing initData or profile"}), 400
+
+    tg_user = verify_telegram_init_data(init_data)
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    user_id = tg_user.get("id")
+    username = tg_user.get("username")
+
+    name = (profile.get("name") or "").strip()
+    age = profile.get("age")
+    gender = profile.get("gender")
+    looking_for = profile.get("looking_for")
+    city = (profile.get("city") or "").strip()
+    bio = (profile.get("bio") or "").strip()
+    photo_id = (profile.get("photo_id") or "").strip()
+
+    if len(name) < 2 or len(name) > 32:
+        return jsonify({"error": "Имя от 2 до 32 символов"}), 400
+    if not isinstance(age, int) or age < 18 or age > 99:
+        return jsonify({"error": "Возраст от 18 до 99"}), 400
+    if gender not in ("male", "female"):
+        return jsonify({"error": "Неверный пол"}), 400
+    if looking_for not in ("male", "female"):
+        return jsonify({"error": "Неверный looking_for"}), 400
+    if not city:
+        return jsonify({"error": "Укажи город"}), 400
+    if not photo_id:
+        return jsonify({"error": "Нужно фото"}), 400
+
+    try:
+        create_user({
+            "user_id": user_id,
+            "username": username,
+            "name": name,
+            "age": age,
+            "gender": gender,
+            "looking_for": looking_for,
+            "city": city,
+            "bio": bio[:200],
+            "photo_id": photo_id,
+        })
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"create_user error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/me", methods=["POST"])
+def api_me():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    u = get_user(tg_user["id"])
+    if not u:
+        return jsonify({"error": "not registered"}), 404
+
+    return jsonify({
+        "user_id": u["user_id"],
+        "name": u["name"],
+        "age": u["age"],
+        "city": u["city"],
+        "bio": u["bio"],
+        "photo_id": u["photo_id"],
+    })
+
+
+@app.route("/api/feed", methods=["POST"])
+def api_feed():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    user_id = tg_user["id"]
+    me = get_user(user_id)
+    if not me:
+        return jsonify({"error": "not registered"}), 404
+
+    profile = get_next_profile(user_id)
+    if not profile:
+        return jsonify({"profile": None})
+
+    return jsonify({
+        "profile": {
+            "user_id": profile["user_id"],
+            "name": profile["name"],
+            "age": profile["age"],
+            "city": profile["city"],
+            "bio": profile["bio"],
+            "photo_id": profile["photo_id"],
+        }
+    })
+
+
+@app.route("/api/like", methods=["POST"])
+def api_like():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    from_id = tg_user["id"]
+    data = request.get_json(silent=True) or {}
+    to_id = data.get("to_id")
+
+    if not to_id or not isinstance(to_id, int):
+        return jsonify({"error": "missing to_id"}), 400
+
+    is_match = add_like(from_id, to_id)
+
+    try:
+        me = get_user_info(from_id)
+        partner = get_user_info(to_id)
+        me_full = get_user(from_id)
+
+        if is_match:
+            if me and partner:
+                text_partner = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{me['name']}</b> лайкнули друг друга."
+                if me.get("username"):
+                    text_partner += f"\n👉 @{me['username']}"
+                tg_send_message(to_id, text_partner)
+
+                text_me = f"💘 <b>У тебя искра!</b>\n\nВы с <b>{partner['name']}</b> лайкнули друг друга."
+                if partner.get("username"):
+                    text_me += f"\n👉 @{partner['username']}"
+                tg_send_message(from_id, text_me)
+        else:
+            if me and me_full:
+                text = (
+                    f"❤️ <b>Тебя лайкнули!</b>\n\n"
+                    f"<b>{me['name']}, {me_full['age']}</b>\n"
+                    f"📍 {me_full['city']}\n\n"
+                    f"{me_full['bio']}"
+                )
+                kb = {
+                    "inline_keyboard": [[
+                        {"text": "❤️ Ответить взаимно", "callback_data": f"like_back:{from_id}"}
+                    ]]
+                }
+                tg_send_photo(to_id, me_full["photo_id"], text, kb)
+    except Exception as e:
+        print(f"like notify error: {e}")
+
+    return jsonify({"ok": True, "match": is_match})
+
+
+@app.route("/api/skip", methods=["POST"])
+def api_skip():
+    tg_user = get_tg_user_from_request()
+    if not tg_user:
+        return jsonify({"error": "invalid initData"}), 401
+
+    from_id = tg_user["id"]
+    data = request.get_json(silent=True) or {}
+    to_id = data.get("to_id")
+
+    if not to_id or not isinstance(to_id, int):
+        return jsonify({"error": "missing to_id"}), 400
+
+    add_skip(from_id, to_id)
+    return jsonify({"ok": True})
+
+
 # ============================================================
 # ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ (для Render)
 # ============================================================
-
-import threading
 
 _bot_thread_started = False
 
@@ -40,6 +342,9 @@ def start_bot_in_thread():
     print("🚀 Поток бота запущен.")
 
 
-# На Render запускаем бота в фоне
 if os.getenv("RENDER") or os.getenv("START_BOT") == "1":
     start_bot_in_thread()
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
