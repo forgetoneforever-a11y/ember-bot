@@ -2,11 +2,15 @@ import hmac
 import hashlib
 import json
 import os
-import threading
+import asyncio
 from urllib.parse import parse_qsl
 
 from flask import (Flask, jsonify, request, send_from_directory, redirect)
 from flask_cors import CORS
+from aiogram import Bot, Dispatcher
+from aiogram.types import Update
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from database import (init_db, create_user, get_user,
@@ -19,6 +23,42 @@ CORS(app)
 
 WEBAPP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
 
+
+# ============================================================
+# BOT (webhook, без потока)
+# ============================================================
+
+_bot = None
+_dp = None
+_loop = None
+_bot_ready = False
+
+
+def ensure_bot():
+    """Создаёт бота и диспетчер один раз."""
+    global _bot, _dp, _loop, _bot_ready
+    if _bot_ready:
+        return
+    from bot import create_bot_and_dispatcher
+    _bot, _dp = create_bot_and_dispatcher()
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+    _bot_ready = True
+    print("🤖 Бот инициализирован (webhook режим).")
+
+
+def run_async(coro):
+    """Запускает async-функцию в главном потоке с собственным loop."""
+    global _loop
+    if _loop is None:
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+    return _loop.run_until_complete(coro)
+
+
+# ============================================================
+# ПРОВЕРКА ПОДПИСИ TELEGRAM
+# ============================================================
 
 def verify_telegram_init_data(init_data: str):
     try:
@@ -44,6 +84,10 @@ def get_tg_user_from_request():
         return None
     return verify_telegram_init_data(init_data)
 
+
+# ============================================================
+# УВЕДОМЛЕНИЯ ЧЕРЕЗ HTTP
+# ============================================================
 
 def tg_send_message(chat_id: int, text: str):
     try:
@@ -77,6 +121,10 @@ def tg_send_photo(chat_id: int, photo_id: str, caption: str = "", reply_markup: 
         print(f"tg_send_photo error: {e}")
 
 
+# ============================================================
+# ИНИЦИАЛИЗАЦИЯ
+# ============================================================
+
 _db_ready = False
 
 
@@ -87,6 +135,10 @@ def ensure_db():
         init_db()
         _db_ready = True
 
+
+# ============================================================
+# ROUTES
+# ============================================================
 
 @app.route("/")
 def root():
@@ -303,48 +355,93 @@ def api_skip():
 
 
 # ============================================================
-# ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ (для Render)
+# WEBHOOK
 # ============================================================
 
-_bot_thread_started = False
+@app.route("/webhook/<secret>", methods=["POST"])
+def telegram_webhook(secret):
+    expected = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+    if secret != expected:
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        ensure_bot()
+        update_data = request.get_json(force=True)
+        update = Update.model_validate(update_data)
+
+        async def process():
+            await _dp.feed_update(_bot, update)
+
+        run_async(process())
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"webhook error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
-def start_bot_in_thread():
-    """Запускает бота в отдельном потоке с polling."""
-    global _bot_thread_started
-    if _bot_thread_started:
-        return
-    _bot_thread_started = True
+@app.route("/set_webhook")
+def set_webhook():
+    try:
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
+        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+        webhook_url = f"{render_url}/webhook/{secret}"
 
-    def runner():
-        import asyncio
-        import logging
-        from bot import create_bot_and_dispatcher
-
-        logging.basicConfig(level=logging.INFO)
-
-        async def run_bot():
-            bot, dp = create_bot_and_dispatcher()
-            print("🤖 Бот запущен в фоне (polling).")
-            await dp.start_polling(bot)
-
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        try:
-            new_loop.run_until_complete(run_bot())
-        except Exception as e:
-            print(f"❌ Ошибка бота: {e}")
-        finally:
-            new_loop.close()
-
-    thread = threading.Thread(target=runner, daemon=True)
-    thread.start()
-    print("🚀 Поток бота запущен.")
+        import requests as rq
+        r = rq.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}&drop_pending_updates=true",
+            timeout=10
+        )
+        data = r.json()
+        return jsonify({
+            "ok": data.get("ok"),
+            "webhook_url": webhook_url,
+            "telegram_says": data
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
-if os.getenv("RENDER") or os.getenv("START_BOT") == "1":
-    start_bot_in_thread()
+@app.route("/delete_webhook")
+def delete_webhook():
+    try:
+        import requests as rq
+        r = rq.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true",
+            timeout=10
+        )
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
+
+# ============================================================
+# АВТО-WEBHOOK
+# ============================================================
+
+def _auto_set_webhook():
+    try:
+        import time
+        time.sleep(3)
+        import requests as rq
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ember-bot-6xwb.onrender.com")
+        secret = os.getenv("WEBHOOK_SECRET", "ember_secret_123")
+        webhook_url = f"{render_url}/webhook/{secret}"
+        r = rq.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}&drop_pending_updates=true",
+            timeout=10
+        )
+        print(f"🔗 Авто-webhook: {r.json()}")
+    except Exception as e:
+        print(f"auto webhook error: {e}")
+
+
+if os.getenv("RENDER"):
+    import threading
+    threading.Thread(target=_auto_set_webhook, daemon=True).start()
+
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
