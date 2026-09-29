@@ -1,5 +1,5 @@
 // ============================================
-// EMBER — вся логика WebApp
+// EMBER — регистрация + лента
 // ============================================
 
 const tg = window.Telegram?.WebApp;
@@ -76,76 +76,6 @@ async function apiCall(path, extra = {}) {
     body: JSON.stringify({ initData: tg?.initData || "", ...extra }),
   });
   return await response.json();
-}
-
-// ============================================
-// НИЖНЯЯ НАВИГАЦИЯ (BOTTOM-NAV)
-// ============================================
-
-const bottomNav = document.getElementById("bottom-nav");
-const navButtons = document.querySelectorAll(".nav-btn");
-
-function setActiveNav(screenId) {
-  navButtons.forEach(btn => {
-    if (btn.dataset.screen === screenId) {
-      btn.classList.add("active");
-    } else {
-      btn.classList.remove("active");
-    }
-  });
-
-  // Показываем панель только на главных экранах
-  if (["screen-feed", "screen-shop", "screen-support"].includes(screenId)) {
-    if (bottomNav) bottomNav.classList.add("visible");
-  } else {
-    if (bottomNav) bottomNav.classList.remove("visible");
-  }
-}
-
-navButtons.forEach(btn => {
-  btn.addEventListener("click", () => {
-    const target = btn.dataset.screen;
-    haptic("light");
-    setActiveNav(target);
-
-    if (target === "screen-feed") {
-      showScreen("screen-feed");
-      if (!document.getElementById("card").style.display ||
-          document.getElementById("card").style.display === "none") {
-        loadNextProfile();
-      }
-    } else if (target === "screen-shop") {
-      showScreen("screen-shop");
-    } else if (target === "screen-support") {
-      showScreen("screen-support");
-    }
-  });
-});
-
-// Кнопка "Назад к анкетам" из магазина
-const shopBackBtn = document.getElementById("btn-shop-back");
-if (shopBackBtn) {
-  shopBackBtn.addEventListener("click", () => {
-    haptic("light");
-    setActiveNav("screen-feed");
-    showScreen("screen-feed");
-    loadNextProfile();
-  });
-}
-
-// Кнопка "Открыть бота" из поддержки
-const supportOpenBtn = document.getElementById("btn-support-open");
-if (supportOpenBtn) {
-  supportOpenBtn.addEventListener("click", () => {
-    haptic("light");
-    const botUsername = "Emberanon_bot";
-    const url = `https://t.me/${botUsername}?start=support`;
-    if (tg && tg.openTelegramLink) {
-      tg.openTelegramLink(url);
-    } else {
-      window.open(url, "_blank");
-    }
-  });
 }
 
 // ============================================
@@ -298,7 +228,6 @@ document.getElementById("btn-save").addEventListener("click", async () => {
     localStorage.removeItem(STORAGE_KEY);
     haptic("success");
     showScreen("screen-done");
-    setActiveNav("");
   } catch (err) {
     haptic("error");
     showError("Ошибка: " + err.message);
@@ -316,7 +245,7 @@ document.getElementById("btn-close").addEventListener("click", () => {
 });
 
 // ============================================
-// ЛЕНТА (FEED)
+// ЛЕНТА
 // ============================================
 
 let currentProfile = null;
@@ -353,19 +282,6 @@ function showCard(p) {
   document.getElementById("card-city").textContent = p.city;
   document.getElementById("card-bio").textContent = p.bio;
 
-  const badges = document.getElementById("card-badges");
-  badges.innerHTML = "";
-  if (p.is_verified) {
-    const b = document.createElement("span");
-    b.className = "badge verified"; b.textContent = "✓";
-    badges.appendChild(b);
-  }
-  if (p.is_premium) {
-    const b = document.createElement("span");
-    b.className = "badge premium"; b.textContent = "⭐";
-    badges.appendChild(b);
-  }
-
   const card = document.getElementById("card");
   card.classList.remove("swiping-left", "swiping-right");
 }
@@ -382,7 +298,6 @@ async function likeCurrent() {
       if (data.match) {
         document.getElementById("match-text").textContent = `Вы с ${currentProfile.name} лайкнули друг друга!`;
         showScreen("screen-match");
-        setActiveNav("");
       } else {
         await loadNextProfile();
       }
@@ -413,55 +328,8 @@ document.getElementById("btn-back-menu").addEventListener("click", () => {
 });
 document.getElementById("btn-match-next").addEventListener("click", () => {
   showScreen("screen-feed");
-  setActiveNav("screen-feed");
   loadNextProfile();
 });
-
-// ============================================
-// ФИЛЬТР ПО ГОРОДУ
-// ============================================
-
-const cityFilterBtn = document.getElementById("btn-city-filter");
-
-function updateCityFilterUI(onlyCity) {
-  if (!cityFilterBtn) return;
-  if (onlyCity) {
-    cityFilterBtn.textContent = "🏙 Только мой город";
-    cityFilterBtn.classList.add("active");
-  } else {
-    cityFilterBtn.textContent = "🌍 Вся страна";
-    cityFilterBtn.classList.remove("active");
-  }
-}
-
-async function loadCityFilterState() {
-  try {
-    const data = await apiCall("/api/me");
-    if (data && data.filter_city_only !== undefined) {
-      updateCityFilterUI(data.filter_city_only);
-    }
-  } catch (e) {}
-}
-
-if (cityFilterBtn) {
-  cityFilterBtn.addEventListener("click", async () => {
-    const isActive = cityFilterBtn.classList.contains("active");
-    const newValue = !isActive;
-
-    try {
-      await apiCall("/api/filter/city", { only_city: newValue });
-      updateCityFilterUI(newValue);
-      haptic("light");
-
-      if (document.getElementById("screen-feed").classList.contains("active")) {
-        await loadNextProfile();
-      }
-    } catch (e) {
-      haptic("error");
-      showError("Не получилось изменить фильтр");
-    }
-  });
-}
 
 // ============================================
 // СТАРТ
@@ -472,23 +340,16 @@ const hasPhotoInUrl = startParams.get("photo_id");
 const wantFeed = startParams.get("screen") === "feed";
 
 (async () => {
-  console.log("EMBER START", { hasPhotoInUrl, wantFeed, initData: !!tg?.initData });
-
   if (hasPhotoInUrl) {
     showScreen("screen-photo");
     checkPhoto();
-    setActiveNav("");
     return;
   }
 
   try {
     const data = await apiCall("/api/me");
-    console.log("apiCall /api/me:", data);
-
     if (data && data.user_id) {
       showScreen("screen-feed");
-      setActiveNav("screen-feed");
-      loadCityFilterState();
       loadNextProfile();
       return;
     }
@@ -499,17 +360,14 @@ const wantFeed = startParams.get("screen") === "feed";
   if (profile.photo_id && profile.name) {
     showScreen("screen-photo");
     checkPhoto();
-    setActiveNav("");
     return;
   }
 
   if (profile.name) {
     showScreen("screen-photo");
     checkPhoto();
-    setActiveNav("");
     return;
   }
 
   showScreen("screen-name");
-  setActiveNav("");
 })();
